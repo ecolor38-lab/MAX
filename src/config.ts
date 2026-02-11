@@ -6,6 +6,7 @@ const EnvSchema = z.object({
   STORAGE_PATH: z.string().optional().default("data/contests.db"),
   REFERRAL_BONUS_TICKETS: z.coerce.number().int().min(0).default(1),
   REFERRAL_MAX_BONUS_TICKETS: z.coerce.number().int().min(0).default(5),
+  LOG_PATH: z.string().optional().default("data/bot.log"),
 });
 
 export type AppConfig = {
@@ -14,6 +15,7 @@ export type AppConfig = {
   storagePath: string;
   referralBonusTickets: number;
   referralMaxBonusTickets: number;
+  logPath: string;
 };
 
 export function loadConfig(): AppConfig {
@@ -36,5 +38,6 @@ export function loadConfig(): AppConfig {
     storagePath: parsed.data.STORAGE_PATH,
     referralBonusTickets: parsed.data.REFERRAL_BONUS_TICKETS,
     referralMaxBonusTickets: parsed.data.REFERRAL_MAX_BONUS_TICKETS,
+    logPath: parsed.data.LOG_PATH,
   };
 }

@@ -4,6 +4,7 @@ import { Bot, Keyboard } from "@maxhub/max-bot-api";
 
 import type { AppConfig } from "./config";
 import { runDeterministicDraw } from "./draw";
+import type { AppLogger } from "./logger";
 import { ContestRepository } from "./repository";
 import type { Contest, ContestAuditEntry, Participant } from "./types";
 
@@ -188,6 +189,7 @@ async function notifyAdmins(bot: Bot, config: AppConfig, message: string): Promi
 function notifySuspiciousIfNeeded(
   bot: Bot,
   config: AppConfig,
+  logger: AppLogger,
   suspiciousState: Map<string, { count: number; windowStart: number; lastAlertAt: number }>,
   reason: string,
   userId: string,
@@ -202,6 +204,7 @@ function notifySuspiciousIfNeeded(
     config,
     `Антифрод сигнал: ${reason}\nuser_id=${userId}\nповторов за окно=${signal.count}`,
   );
+  logger.warn("suspicious_activity", { reason, userId, count: signal.count });
 }
 
 async function findMissingRequiredChats(
@@ -434,7 +437,7 @@ async function publishContestResults(bot: Bot, contest: Contest): Promise<void> 
   );
 }
 
-export function createContestBot(config: AppConfig): Bot {
+export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
   const repository = new ContestRepository(config.storagePath);
   const bot = new Bot(config.botToken);
   const commandCooldowns = new Map<string, number>();
@@ -541,7 +544,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const cooldown = hitCooldown(commandCooldowns, `newcontest:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
-      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "newcontest_cooldown", user.id);
+      notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "newcontest_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
     }
 
@@ -584,6 +587,7 @@ export function createContestBot(config: AppConfig): Bot {
     };
 
     repository.create(contest);
+    logger.info("contest_created", { contestId: contest.id, actorId: user.id });
     return ctx.reply(
       `Конкурс создан.\nID: ${contest.id}\nНазвание: ${contest.title}\nЗавершение: ${contest.endsAt}\nПобедителей: ${contest.maxWinners}`,
     );
@@ -607,7 +611,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const cooldown = hitCooldown(commandCooldowns, `setrequired:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
-      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "setrequired_cooldown", user.id);
+      notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "setrequired_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
     }
 
@@ -644,7 +648,7 @@ export function createContestBot(config: AppConfig): Bot {
 
     const cooldown = hitCooldown(commandCooldowns, `join:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
-      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "join_cooldown", user.id);
+      notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "join_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
     }
 
@@ -658,11 +662,13 @@ export function createContestBot(config: AppConfig): Bot {
       return ctx.reply(result.message);
     }
     if (result.already) {
+      logger.info("contest_join_duplicate", { contestId, userId: user.id });
       return ctx.reply(
         `Вы уже участвуете в конкурсе "${result.contest.title}". Участников: ${result.contest.participants.length}`,
       );
     }
 
+    logger.info("contest_join", { contestId, userId: user.id });
     return ctx.reply(
       `Вы участвуете в конкурсе "${result.contest.title}". Всего участников: ${result.contest.participants.length}`,
     );
@@ -736,7 +742,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const cooldown = hitCooldown(commandCooldowns, `editcontest:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
-      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "editcontest_cooldown", user.id);
+      notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "editcontest_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
     }
 
@@ -780,6 +786,7 @@ export function createContestBot(config: AppConfig): Bot {
       }
     }
 
+    logger.info("contest_edited", { contestId: updated.id, actorId: user.id });
     return ctx.reply(
       `Конкурс обновлен: ${updated.title}\nID: ${updated.id}\nendsAt: ${updated.endsAt}\nmaxWinners: ${updated.maxWinners}`,
     );
@@ -795,7 +802,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const cooldown = hitCooldown(commandCooldowns, `closecontest:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
-      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "closecontest_cooldown", user.id);
+      notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "closecontest_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
     }
 
@@ -849,6 +856,7 @@ export function createContestBot(config: AppConfig): Bot {
       return ctx.reply("Не удалось закрыть конкурс.");
     }
 
+    logger.warn("contest_closed_forced", { contestId: updated.id, actorId: user.id });
     await publishContestResults(bot, updated);
     return ctx.reply(
       `Конкурс принудительно закрыт: ${updated.title}\nПобедители: ${updated.winners.join(", ") || "нет"}`,
@@ -865,7 +873,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const cooldown = hitCooldown(commandCooldowns, `reopencontest:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
-      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "reopencontest_cooldown", user.id);
+      notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "reopencontest_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
     }
 
@@ -910,6 +918,7 @@ export function createContestBot(config: AppConfig): Bot {
       return ctx.reply("Не удалось переоткрыть конкурс.");
     }
 
+    logger.warn("contest_reopened", { contestId: updated.id, actorId: user.id });
     return ctx.reply(`Конкурс переоткрыт: ${updated.title}\nНовая дата: ${updated.endsAt}`);
   });
 
@@ -950,7 +959,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const cooldown = hitCooldown(commandCooldowns, `publish:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
-      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "publish_cooldown", user.id);
+      notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "publish_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
     }
 
@@ -993,6 +1002,7 @@ export function createContestBot(config: AppConfig): Bot {
       publishMessageId: message.body?.mid ?? undefined,
     }));
 
+    logger.info("contest_published", { contestId: contest.id, chatId, actorId: user.id });
     return ctx.reply(`Конкурс опубликован в chat_id=${chatId}.`);
   });
 
@@ -1005,7 +1015,7 @@ export function createContestBot(config: AppConfig): Bot {
 
     const cooldown = hitCooldown(commandCooldowns, `join_callback:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
-      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "join_callback_cooldown", user.id);
+      notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "join_callback_cooldown", user.id);
       await ctx.answerOnCallback({
         notification: `Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`,
       });
@@ -1025,6 +1035,9 @@ export function createContestBot(config: AppConfig): Bot {
       return;
     }
 
+    if (!result.already) {
+      logger.info("contest_join_callback", { contestId, userId: user.id });
+    }
     await ctx.answerOnCallback({
       notification: result.already
         ? `Вы уже участвуете. Участников: ${result.contest.participants.length}`
@@ -1042,7 +1055,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const userCooldown = hitCooldown(commandCooldowns, `draw:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!userCooldown.ok) {
-      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "draw_cooldown", user.id);
+      notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "draw_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${userCooldown.waitSeconds} сек.`);
     }
 
@@ -1063,7 +1076,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const lock = hitCooldown(drawLocks, `draw:${contest.id}`, DRAW_LOCK_TTL_MS);
     if (!lock.ok) {
-      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "draw_lock", user.id);
+      notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "draw_lock", user.id);
       return ctx.reply(`Жеребьевка уже выполняется. Повторите через ${lock.waitSeconds} сек.`);
     }
 
@@ -1089,6 +1102,7 @@ export function createContestBot(config: AppConfig): Bot {
       return ctx.reply("Не удалось завершить конкурс.");
     }
 
+    logger.info("contest_draw", { contestId: updated.id, actorId: user.id, winners: updated.winners });
     void publishContestResults(bot, updated);
 
     return ctx.reply(
@@ -1110,7 +1124,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const userCooldown = hitCooldown(commandCooldowns, `reroll:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!userCooldown.ok) {
-      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "reroll_cooldown", user.id);
+      notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "reroll_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${userCooldown.waitSeconds} сек.`);
     }
 
@@ -1131,7 +1145,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const lock = hitCooldown(drawLocks, `reroll:${contest.id}`, DRAW_LOCK_TTL_MS);
     if (!lock.ok) {
-      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "reroll_lock", user.id);
+      notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "reroll_lock", user.id);
       return ctx.reply(`Reroll уже выполняется. Повторите через ${lock.waitSeconds} сек.`);
     }
 
@@ -1161,6 +1175,7 @@ export function createContestBot(config: AppConfig): Bot {
       return ctx.reply("Не удалось выполнить reroll.");
     }
 
+    logger.info("contest_reroll", { contestId: updated.id, actorId: user.id, winners: updated.winners });
     void publishContestResults(bot, updated);
 
     return ctx.reply(

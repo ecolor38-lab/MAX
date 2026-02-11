@@ -29,6 +29,7 @@ npm run dev
 - `BOT_TOKEN` - токен бота MAX.
 - `ADMIN_USER_IDS` - ID админов через запятую.
 - `STORAGE_PATH` - путь к хранилищу (по умолчанию `data/contests.db`).
+- `LOG_PATH` - путь до JSONL логов бота (по умолчанию `data/bot.log`).
 
 ## Формат создания конкурса
 
