@@ -29,6 +29,7 @@
 - [x] Smoke/integration тесты mini-app endpoint’ов (`/health`, `/audit`, `/export`)
 - [x] Security hardening mini-app (TTL подписи, IP allowlist, rate-limit)
 - [x] Admin metrics endpoint (`/metrics`) для продуктовой/операционной аналитики
+- [x] Metrics CSV endpoint (`/metrics.csv`) для BI/Google Sheets
 
 ## 1) Текущий спринт
 

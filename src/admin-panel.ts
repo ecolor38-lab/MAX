@@ -352,6 +352,35 @@ function buildMetricsReport(contests: Contest[]): {
   };
 }
 
+function buildMetricsCsv(report: ReturnType<typeof buildMetricsReport>): string {
+  const rows: Array<[string, string]> = [
+    ["totals.contests", String(report.totals.contests)],
+    ["totals.active", String(report.totals.active)],
+    ["totals.completed", String(report.totals.completed)],
+    ["totals.draft", String(report.totals.draft)],
+    ["totals.participants", String(report.totals.participants)],
+    ["engagement.contestsWithParticipants", String(report.engagement.contestsWithParticipants)],
+    ["engagement.participationRatePct", String(report.engagement.participationRatePct)],
+    ["engagement.avgParticipantsPerContest", String(report.engagement.avgParticipantsPerContest)],
+    ["engagement.contestsWithRequiredChats", String(report.engagement.contestsWithRequiredChats)],
+    ["draws.drawActions", String(report.draws.drawActions)],
+    ["draws.rerollActions", String(report.draws.rerollActions)],
+    ["draws.totalWinners", String(report.draws.totalWinners)],
+    ["referrals.participantsWithReferrer", String(report.referrals.participantsWithReferrer)],
+    ["referrals.sumReferralCounters", String(report.referrals.sumReferralCounters)],
+  ];
+
+  for (const [index, item] of report.topContestsByParticipants.entries()) {
+    const prefix = `topContestsByParticipants.${index}`;
+    rows.push([`${prefix}.id`, item.id]);
+    rows.push([`${prefix}.title`, item.title]);
+    rows.push([`${prefix}.participants`, String(item.participants)]);
+    rows.push([`${prefix}.status`, item.status]);
+  }
+
+  return ["metric,value", ...rows.map(([metric, value]) => `${toCsvValue(metric)},${toCsvValue(value)}`)].join("\n");
+}
+
 function renderPage(
   contests: Contest[],
   basePath: string,
@@ -735,7 +764,8 @@ export function createAdminPanelServer(
       pathName !== `${basePath}/action` &&
       pathName !== `${basePath}/export` &&
       pathName !== `${basePath}/audit` &&
-      pathName !== `${basePath}/metrics`
+      pathName !== `${basePath}/metrics` &&
+      pathName !== `${basePath}/metrics.csv`
     ) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("Not found");
@@ -849,6 +879,20 @@ export function createAdminPanelServer(
       return;
     }
 
+    if (method === "GET" && pathName === `${basePath}/metrics.csv`) {
+      const query = requestUrl.searchParams.get("q") ?? "";
+      const status = parseStatusFilter(requestUrl.searchParams.get("status"));
+      const filtered = applyContestFilters(repository.list(), query, status);
+      const report = buildMetricsReport(filtered);
+      const csv = buildMetricsCsv(report);
+      res.writeHead(200, {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="metrics-${Date.now()}.csv"`,
+      });
+      res.end(csv);
+      return;
+    }
+
     if (method === "POST" && pathName === `${basePath}/action`) {
       const body = await readPostBody(req);
       const action = body.get("action") ?? "";
@@ -895,6 +939,7 @@ export function createAdminPanelServer(
 export const __adminPanelTestables = {
   applyContestFilters,
   buildAuditReport,
+  buildMetricsCsv,
   buildMetricsReport,
   buildAdminSignature,
   buildContestCsv,

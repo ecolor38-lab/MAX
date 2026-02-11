@@ -229,6 +229,24 @@ describe("admin panel helpers", () => {
     assert.strictEqual(report.topContestsByParticipants[0]?.id, "m1");
   });
 
+  it("exports metrics report to csv", () => {
+    const report = __adminPanelTestables.buildMetricsReport([
+      mkContest({
+        id: "mc1",
+        title: "Metrics Contest",
+        status: "completed",
+        participants: [{ userId: "u1", joinedAt: new Date().toISOString(), tickets: 1 }],
+        winners: ["u1"],
+        auditLog: [{ at: "2026-01-02T00:00:00.000Z", action: "draw", actorId: "a1" }],
+      }),
+    ]);
+    const csv = __adminPanelTestables.buildMetricsCsv(report);
+    assert.match(csv, /metric,value/);
+    assert.match(csv, /"totals\.contests","1"/);
+    assert.match(csv, /"draws\.drawActions","1"/);
+    assert.match(csv, /"topContestsByParticipants\.0\.id","mc1"/);
+  });
+
   it("normalizes ip and checks allowlist", () => {
     assert.strictEqual(__adminPanelTestables.normalizeIp("::ffff:127.0.0.1"), "127.0.0.1");
     assert.strictEqual(__adminPanelTestables.normalizeIp("127.0.0.1"), "127.0.0.1");

@@ -147,6 +147,16 @@ describe("admin panel server endpoints", () => {
     assert.strictEqual(payload.totals.participants, 1);
     assert.strictEqual(payload.draws.drawActions, 1);
   });
+
+  it("returns metrics csv for signed request", async () => {
+    const query = buildSignedQuery("1", config.adminPanelSecret || config.botToken);
+    const url = await getServerBaseUrl(server);
+    const response = await fetch(`${url}/adminpanel/metrics.csv?${query}`);
+    const text = await response.text();
+    assert.strictEqual(response.status, 200);
+    assert.match(text, /metric,value/);
+    assert.match(text, /"totals\.contests","1"/);
+  });
 });
 
 describe("admin panel server hardening", () => {

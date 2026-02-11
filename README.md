@@ -94,6 +94,7 @@ docker compose logs -f
   - `${ADMIN_PANEL_URL}/export` — CSV отчет по фильтрам (`q`, `status`).
   - `${ADMIN_PANEL_URL}/audit` — JSON сводка аудита по фильтрам (`q`, `status`).
   - `${ADMIN_PANEL_URL}/metrics` — JSON метрики продукта/операций по фильтрам (`q`, `status`).
+  - `${ADMIN_PANEL_URL}/metrics.csv` — CSV с агрегированными KPI для BI/Sheets.
 - В проекте есть smoke/integration тесты для endpoint’ов панели (`/health`, `/audit`, `/export`).
 - Security hardening панели:
   - configurable TTL подписи (`ADMIN_PANEL_TOKEN_TTL_MS`);
