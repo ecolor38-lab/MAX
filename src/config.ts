@@ -18,6 +18,7 @@ const EnvSchema = z.object({
   ADMIN_PANEL_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1_000).default(60_000),
   ADMIN_PANEL_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(120),
   ADMIN_PANEL_IP_ALLOWLIST: z.string().optional().default(""),
+  ADMIN_ALERT_DIGEST_INTERVAL_MS: z.coerce.number().int().min(0).default(300_000),
 });
 
 export type AppConfig = {
@@ -37,6 +38,7 @@ export type AppConfig = {
   adminPanelRateLimitWindowMs: number;
   adminPanelRateLimitMax: number;
   adminPanelIpAllowlist: Set<string>;
+  adminAlertDigestIntervalMs: number;
 };
 
 export function loadConfig(): AppConfig {
@@ -81,6 +83,7 @@ export function loadConfig(): AppConfig {
     adminPanelRateLimitWindowMs: parsed.data.ADMIN_PANEL_RATE_LIMIT_WINDOW_MS,
     adminPanelRateLimitMax: parsed.data.ADMIN_PANEL_RATE_LIMIT_MAX,
     adminPanelIpAllowlist,
+    adminAlertDigestIntervalMs: parsed.data.ADMIN_ALERT_DIGEST_INTERVAL_MS,
     ...(adminPanelUrl ? { adminPanelUrl } : {}),
     ...(adminPanelSecret ? { adminPanelSecret } : {}),
   };

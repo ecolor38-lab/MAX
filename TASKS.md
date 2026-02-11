@@ -31,6 +31,7 @@
 - [x] Admin metrics endpoint (`/metrics`) для продуктовой/операционной аналитики
 - [x] Metrics CSV endpoint (`/metrics.csv`) для BI/Google Sheets
 - [x] Alerts endpoint (`/alerts`) для мониторинга аномалий конкурсов
+- [x] Авто alert-digest в личку owner/admin по аномалиям
 
 ## 1) Текущий спринт
 

@@ -53,6 +53,7 @@ docker compose logs -f
 - `ADMIN_PANEL_RATE_LIMIT_WINDOW_MS` - окно rate-limit для mini-app endpoint’ов.
 - `ADMIN_PANEL_RATE_LIMIT_MAX` - максимум запросов за окно на IP+route.
 - `ADMIN_PANEL_IP_ALLOWLIST` - allowlist IP через запятую (опционально).
+- `ADMIN_ALERT_DIGEST_INTERVAL_MS` - период авто-рассылки alert digest админам (0 = выключить).
 
 ## Формат создания конкурса
 
@@ -101,6 +102,8 @@ docker compose logs -f
   - configurable TTL подписи (`ADMIN_PANEL_TOKEN_TTL_MS`);
   - IP allowlist (`ADMIN_PANEL_IP_ALLOWLIST`);
   - rate-limit на endpoint’ы (`ADMIN_PANEL_RATE_LIMIT_WINDOW_MS` + `ADMIN_PANEL_RATE_LIMIT_MAX`).
+- Alert digest:
+  - бот автоматически отправляет owner/admin сводку аномалий из `/alerts` с периодом `ADMIN_ALERT_DIGEST_INTERVAL_MS`.
 
 ## Роли и доступы
 

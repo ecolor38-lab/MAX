@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 
 import { Bot, Keyboard } from "@maxhub/max-bot-api";
 
+import { buildAlertsReport } from "./admin-panel";
 import type { AppConfig } from "./config";
 import { runDeterministicDraw } from "./draw";
 import { t } from "./i18n";
@@ -15,6 +16,7 @@ const DRAW_LOCK_TTL_MS = 10_000;
 const SUSPICIOUS_WINDOW_MS = 5 * 60 * 1000;
 const SUSPICIOUS_THRESHOLD = 3;
 const SUSPICIOUS_ALERT_COOLDOWN_MS = 5 * 60 * 1000;
+const MIN_ALERT_DIGEST_INTERVAL_MS = 60_000;
 
 function extractUser(ctx: Ctx): { id: string; username?: string } | null {
   const user = ctx?.user?.();
@@ -204,13 +206,25 @@ function hitSuspiciousCounter(
 }
 
 async function notifyAdmins(bot: Bot, config: AppConfig, message: string): Promise<void> {
-  const adminIds = [...config.adminUserIds].map((value) => Number(value)).filter((v) => Number.isFinite(v));
-  if (adminIds.length === 0) {
+  const adminIds = new Set<number>();
+  if (config.ownerUserId) {
+    const ownerId = Number(config.ownerUserId);
+    if (Number.isFinite(ownerId)) {
+      adminIds.add(ownerId);
+    }
+  }
+  for (const value of config.adminUserIds) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      adminIds.add(parsed);
+    }
+  }
+  if (adminIds.size === 0) {
     return;
   }
 
   await Promise.all(
-    adminIds.map(async (adminId) => {
+    [...adminIds].map(async (adminId) => {
       try {
         await bot.api.sendMessageToUser(adminId, message);
       } catch {
@@ -239,6 +253,46 @@ function notifySuspiciousIfNeeded(
     `Антифрод сигнал: ${reason}\nuser_id=${userId}\nповторов за окно=${signal.count}`,
   );
   logger.warn("suspicious_activity", { reason, userId, count: signal.count });
+}
+
+function buildAlertDigestSignature(
+  alerts: Array<{ code: string; severity: string; message: string; value: number }>,
+): string {
+  return alerts.map((alert) => `${alert.code}:${alert.severity}:${alert.value}`).sort().join("|");
+}
+
+function formatAlertDigestMessage(
+  alerts: Array<{ code: string; severity: string; message: string; value: number }>,
+): string {
+  const lines = alerts.map((alert) => `- [${alert.severity}] ${alert.code}: ${alert.message} (value=${alert.value})`);
+  return ["[ALERT DIGEST] Обнаружены аномалии конкурсов:", ...lines].join("\n");
+}
+
+async function notifyAlertDigestIfNeeded(
+  bot: Bot,
+  config: AppConfig,
+  logger: AppLogger,
+  repository: ContestRepository,
+  state: { lastSignature: string; lastSentAt: number },
+): Promise<void> {
+  const report = buildAlertsReport(repository.list());
+  if (report.alerts.length === 0) {
+    return;
+  }
+  const signature = buildAlertDigestSignature(report.alerts);
+  if (signature === state.lastSignature) {
+    return;
+  }
+  if (Date.now() - state.lastSentAt < MIN_ALERT_DIGEST_INTERVAL_MS) {
+    return;
+  }
+  const message = formatAlertDigestMessage(report.alerts);
+  await notifyAdmins(bot, config, message);
+  state.lastSignature = signature;
+  state.lastSentAt = Date.now();
+  logger.warn("alert_digest_sent", {
+    alerts: report.alerts.map((alert) => ({ code: alert.code, severity: alert.severity, value: alert.value })),
+  });
 }
 
 async function findMissingRequiredChats(
@@ -477,6 +531,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   const commandCooldowns = new Map<string, number>();
   const drawLocks = new Map<string, number>();
   const suspiciousActivity = new Map<string, { count: number; windowStart: number; lastAlertAt: number }>();
+  const alertDigestState = { lastSignature: "", lastSentAt: 0 };
   const msg = (key: Parameters<typeof t>[1], vars?: Record<string, string | number>) =>
     t(config.defaultLocale, key, vars);
 
@@ -1257,10 +1312,18 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     void autoFinishExpiredContests(bot, storage);
   }, 15000);
 
+  if (config.adminAlertDigestIntervalMs > 0) {
+    setInterval(() => {
+      void notifyAlertDigestIfNeeded(bot, config, logger, storage, alertDigestState);
+    }, config.adminAlertDigestIntervalMs);
+  }
+
   return bot;
 }
 
 export const __testables = {
+  buildAlertDigestSignature,
+  formatAlertDigestMessage,
   buildAdminPanelUrl,
   parseCommandArgs,
   parseRequiredChatIds,

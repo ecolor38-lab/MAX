@@ -19,6 +19,7 @@ function mkConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     adminPanelRateLimitWindowMs: 60_000,
     adminPanelRateLimitMax: 120,
     adminPanelIpAllowlist: new Set(),
+    adminAlertDigestIntervalMs: 300_000,
   };
   return Object.assign(base, overrides);
 }
@@ -108,6 +109,18 @@ describe("bot testable helpers", () => {
     } finally {
       Date.now = originalNow;
     }
+  });
+
+  it("builds and formats alert digest", () => {
+    const alerts = [
+      { code: "b", severity: "low", message: "B", value: 2 },
+      { code: "a", severity: "high", message: "A", value: 1 },
+    ];
+    const sig = __testables.buildAlertDigestSignature(alerts);
+    assert.strictEqual(sig, "a:high:1|b:low:2");
+    const text = __testables.formatAlertDigestMessage(alerts);
+    assert.match(text, /\[ALERT DIGEST\]/);
+    assert.match(text, /a: A/);
   });
 });
 

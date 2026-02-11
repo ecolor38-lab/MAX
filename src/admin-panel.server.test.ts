@@ -74,6 +74,7 @@ describe("admin panel server endpoints", () => {
     adminPanelRateLimitWindowMs: 60_000,
     adminPanelRateLimitMax: 120,
     adminPanelIpAllowlist: new Set(),
+    adminAlertDigestIntervalMs: 300_000,
   };
 
   const logger = new AppLogger({ logPath: config.logPath });
@@ -198,6 +199,7 @@ describe("admin panel server hardening", () => {
       adminPanelRateLimitWindowMs: 60_000,
       adminPanelRateLimitMax: 120,
       adminPanelIpAllowlist: new Set(["10.10.10.10"]),
+      adminAlertDigestIntervalMs: 300_000,
     };
     const maybeServer = createAdminPanelServer(config, repository, logger);
     if (!maybeServer) {
@@ -232,6 +234,7 @@ describe("admin panel server hardening", () => {
       adminPanelRateLimitWindowMs: 120_000,
       adminPanelRateLimitMax: 1,
       adminPanelIpAllowlist: new Set(),
+      adminAlertDigestIntervalMs: 300_000,
     };
     const maybeServer = createAdminPanelServer(config, repository, logger);
     if (!maybeServer) {
