@@ -19,19 +19,29 @@ const SUSPICIOUS_ALERT_COOLDOWN_MS = 5 * 60 * 1000;
 const MIN_ALERT_DIGEST_INTERVAL_MS = 60_000;
 
 function extractUser(ctx: Ctx): { id: string; username?: string } | null {
-  const user = ctx?.user?.();
+  const userSource =
+    typeof ctx?.user === "function"
+      ? ctx.user()
+      : (ctx?.user ?? ctx?.sender ?? ctx?.update?.user ?? ctx?.update?.sender ?? ctx?.message?.sender);
+  const user = userSource ?? null;
   if (!user) {
     return null;
   }
 
-  const id = String(user.userId ?? user.id ?? "");
+  const id = String(user.userId ?? user.user_id ?? user.id ?? "");
   if (!id) {
     return null;
   }
 
+  const nameFromParts =
+    [user.first_name, user.last_name]
+      .filter((value: unknown) => typeof value === "string" && value.trim().length > 0)
+      .join(" ")
+      .trim() || undefined;
+
   return {
     id,
-    username: user.username ?? user.name ?? undefined,
+    username: user.username ?? user.name ?? nameFromParts,
   };
 }
 
@@ -1322,6 +1332,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 }
 
 export const __testables = {
+  extractUser,
   buildAlertDigestSignature,
   formatAlertDigestMessage,
   buildAdminPanelUrl,

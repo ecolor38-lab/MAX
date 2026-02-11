@@ -25,6 +25,41 @@ function mkConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 }
 
 describe("bot testable helpers", () => {
+  it("extracts user from both property and function context forms", () => {
+    assert.deepStrictEqual(
+      __testables.extractUser({
+        user: {
+          userId: 42,
+          username: "alice",
+        },
+      }),
+      { id: "42", username: "alice" },
+    );
+
+    assert.deepStrictEqual(
+      __testables.extractUser({
+        user: () => ({
+          userId: 77,
+          name: "bob",
+        }),
+      }),
+      { id: "77", username: "bob" },
+    );
+
+    assert.deepStrictEqual(
+      __testables.extractUser({
+        update: {
+          sender: {
+            user_id: 99,
+            first_name: "Andrey",
+            last_name: "Max",
+          },
+        },
+      }),
+      { id: "99", username: "Andrey Max" },
+    );
+  });
+
   it("parses command args", () => {
     assert.strictEqual(__testables.parseCommandArgs("/join abc def"), "abc def");
     assert.strictEqual(__testables.parseCommandArgs("/start"), "");
