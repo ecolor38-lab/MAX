@@ -253,3 +253,49 @@ describe("admin panel server hardening", () => {
     }
   });
 });
+
+describe("admin panel server when disabled", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "max-admin-server-disabled-"));
+  const storagePath = path.join(dir, "contests.json");
+  const logPath = path.join(dir, "bot.log");
+  const repository = new ContestRepository(storagePath);
+  const logger = new AppLogger({ logPath });
+
+  it("keeps health endpoint available and blocks panel routes", async () => {
+    const config: AppConfig = {
+      botToken: "token-token-token",
+      ownerUserId: "1",
+      adminUserIds: new Set(["1"]),
+      moderatorUserIds: new Set(),
+      storagePath,
+      referralBonusTickets: 1,
+      referralMaxBonusTickets: 5,
+      logPath,
+      defaultLocale: "ru",
+      adminPanelPort: 0,
+      adminPanelTokenTtlMs: 600_000,
+      adminPanelRateLimitWindowMs: 60_000,
+      adminPanelRateLimitMax: 120,
+      adminPanelIpAllowlist: new Set(),
+      adminAlertDigestIntervalMs: 300_000,
+    };
+    const maybeServer = createAdminPanelServer(config, repository, logger);
+    if (!maybeServer) {
+      throw new Error("Server must be created for tests.");
+    }
+    const server = maybeServer;
+    try {
+      const url = await getServerBaseUrl(server);
+      const health = await fetch(`${url}/health`);
+      const healthText = await health.text();
+      const panel = await fetch(`${url}/adminpanel`);
+      const panelText = await panel.text();
+      assert.strictEqual(health.status, 200);
+      assert.strictEqual(healthText, "ok");
+      assert.strictEqual(panel.status, 404);
+      assert.match(panelText, /Admin panel is disabled/);
+    } finally {
+      server.close();
+    }
+  });
+});

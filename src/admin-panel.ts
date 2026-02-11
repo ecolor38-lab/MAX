@@ -833,11 +833,9 @@ export function createAdminPanelServer(
   repository: ContestRepository,
   logger: AppLogger,
 ): http.Server | null {
-  if (!config.adminPanelUrl) {
-    return null;
-  }
-  const panelUrl = new URL(config.adminPanelUrl);
-  const basePath = panelUrl.pathname || "/adminpanel";
+  const panelEnabled = Boolean(config.adminPanelUrl);
+  const panelUrl = panelEnabled ? new URL(config.adminPanelUrl as string) : null;
+  const basePath = panelUrl?.pathname || "/adminpanel";
   const secret = config.adminPanelSecret || config.botToken;
   const rateLimitState = new Map<string, RateLimitState>();
 
@@ -851,6 +849,12 @@ export function createAdminPanelServer(
     if (pathName === "/health") {
       res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
       res.end("ok");
+      return;
+    }
+
+    if (!panelEnabled) {
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Admin panel is disabled");
       return;
     }
 
@@ -1044,8 +1048,21 @@ export function createAdminPanelServer(
     res.end("Method Not Allowed");
   });
 
+  server.on("error", (error: NodeJS.ErrnoException) => {
+    logger.error("admin_panel_server_error", {
+      code: error.code ?? "UNKNOWN",
+      message: error.message,
+      bindPort: config.adminPanelPort,
+      panelEnabled,
+    });
+  });
+
   server.listen(config.adminPanelPort, "0.0.0.0", () => {
-    logger.info("admin_panel_started", { url: config.adminPanelUrl, bindPort: config.adminPanelPort });
+    logger.info("admin_panel_started", {
+      url: config.adminPanelUrl ?? "",
+      bindPort: config.adminPanelPort,
+      panelEnabled,
+    });
   });
 
   return server;

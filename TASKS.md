@@ -132,3 +132,12 @@
 - [x] Admin mini-app защищен (signed URL + TTL + rate-limit + IP allowlist)
 - [x] API-выгрузки для аналитики доступны (`/export`, `/audit`, `/metrics`, `/metrics.csv`, `/alerts`)
 - [x] Alert-digest аномалий отправляется owner/admin автоматически
+
+## 7) Production hardening (post-release polish)
+
+- [x] Graceful shutdown (`SIGINT`/`SIGTERM`) + обработка `uncaughtException`/`unhandledRejection`
+- [x] Health endpoint доступен всегда (`/health`) даже при выключенной admin-panel URL
+- [x] Защита от падения процесса при ошибке bind/listen admin server (логируется как `admin_panel_server_error`)
+- [x] Docker `HEALTHCHECK` по `/health`
+- [x] Добавлен операционный runbook (`RUNBOOK.md`)
+- [x] Добавлены тесты конфигурации (`src/config.test.ts`)

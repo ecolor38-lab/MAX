@@ -40,6 +40,8 @@ npm run dev
    - `/metrics.csv`
    - `/alerts`
 
+Операционная поддержка и troubleshooting: `RUNBOOK.md`.
+
 ## Запуск в Docker
 
 ```bash
@@ -113,6 +115,7 @@ docker compose logs -f
   - `${ADMIN_PANEL_URL}/metrics` — JSON метрики продукта/операций по фильтрам (`q`, `status`).
   - `${ADMIN_PANEL_URL}/metrics.csv` — CSV с агрегированными KPI для BI/Sheets.
   - `${ADMIN_PANEL_URL}/alerts` — JSON алерты/аномалии (reroll, просроченные active, referral outliers).
+- Health endpoint доступен всегда: `GET /health` (`ok`) — удобно для uptime-monitoring и Docker healthcheck.
 - В проекте есть smoke/integration тесты для endpoint’ов панели (`/health`, `/audit`, `/export`).
 - Security hardening панели:
   - configurable TTL подписи (`ADMIN_PANEL_TOKEN_TTL_MS`);
