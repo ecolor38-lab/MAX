@@ -76,6 +76,16 @@ function canModerateContest(config: AppConfig, userId: string): boolean {
   return role === "owner" || role === "admin" || role === "moderator";
 }
 
+function buildAdminPanelUrl(baseUrl: string, userId: string, secret: string): string {
+  const ts = Date.now().toString();
+  const signature = crypto.createHmac("sha256", secret).update(`${userId}:${ts}`).digest("hex");
+  const url = new URL(baseUrl);
+  url.searchParams.set("uid", userId);
+  url.searchParams.set("ts", ts);
+  url.searchParams.set("sig", signature);
+  return url.toString();
+}
+
 function parseRequiredChatIds(raw: string): number[] {
   return raw
     .split(/[,\s]+/)
@@ -473,6 +483,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
   bot.api.setMyCommands([
     { name: "start", description: "Помощь и команды" },
     { name: "myrole", description: "Показать роль: /myrole" },
+    { name: "adminpanel", description: "Открыть админ-панель: /adminpanel" },
     { name: "whoami", description: "Показать ваш user ID" },
     {
       name: "newcontest",
@@ -537,6 +548,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
         msg("startCommandsLabel"),
         "/whoami",
         "/myrole",
+        "/adminpanel",
         "/newcontest Название | ISO-дата-окончания | число_победителей",
         "/contests",
         "/setrequired contest_id chat_id[,chat_id2,...]",
@@ -568,6 +580,24 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return ctx.reply(msg("userNotDetected"));
     }
     return ctx.reply(msg("myRole", { role: getUserRole(config, user.id) }));
+  });
+
+  bot.command("adminpanel", (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      return ctx.reply(msg("userNotDetected"));
+    }
+    if (!canManageContest(config, user.id)) {
+      return ctx.reply(msg("adminOnly"));
+    }
+    if (!config.adminPanelUrl) {
+      return ctx.reply("Админ-панель не настроена: задайте ADMIN_PANEL_URL в .env.");
+    }
+    const secret = config.adminPanelSecret || config.botToken;
+    const url = buildAdminPanelUrl(config.adminPanelUrl, user.id, secret);
+    return ctx.reply("Открыть админ-панель:", {
+      attachments: [Keyboard.inlineKeyboard([[Keyboard.button.link("Открыть панель", url)]])],
+    });
   });
 
   bot.command("newcontest", (ctx: Ctx) => {
@@ -1231,6 +1261,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
 }
 
 export const __testables = {
+  buildAdminPanelUrl,
   parseCommandArgs,
   parseRequiredChatIds,
   parseJoinArgs,

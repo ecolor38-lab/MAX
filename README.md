@@ -46,6 +46,8 @@ docker compose logs -f
 - `STORAGE_PATH` - путь к хранилищу (по умолчанию `data/contests.db`).
 - `LOG_PATH` - путь до JSONL логов бота (по умолчанию `data/bot.log`).
 - `DEFAULT_LOCALE` - язык ответов бота (`ru` или `en`).
+- `ADMIN_PANEL_URL` - URL вашей веб-админки (опционально).
+- `ADMIN_PANEL_SECRET` - секрет подписи ссылок в админку (опционально, иначе используется `BOT_TOKEN`).
 
 ## Формат создания конкурса
 
@@ -66,12 +68,14 @@ docker compose logs -f
 /closecontest contest_id
 /reopencontest contest_id 2026-12-31T20:00:00Z
 /contestaudit contest_id
+/adminpanel
 ```
 
 - `editcontest` меняет параметры существующего конкурса.
 - `closecontest` принудительно завершает конкурс (с розыгрышем, если есть участники).
 - `reopencontest` открывает завершенный конкурс заново с новой датой окончания.
 - `contestaudit` показывает последние записи журнала действий по конкурсу.
+- `adminpanel` открывает ссылку на мини-админку (только owner/admin) с подписью `uid/ts/sig`.
 
 ## Роли и доступы
 

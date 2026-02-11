@@ -11,6 +11,8 @@ const EnvSchema = z.object({
   REFERRAL_MAX_BONUS_TICKETS: z.coerce.number().int().min(0).default(5),
   LOG_PATH: z.string().optional().default("data/bot.log"),
   DEFAULT_LOCALE: z.enum(["ru", "en"]).default("ru"),
+  ADMIN_PANEL_URL: z.string().optional().default(""),
+  ADMIN_PANEL_SECRET: z.string().optional().default(""),
 });
 
 export type AppConfig = {
@@ -23,6 +25,8 @@ export type AppConfig = {
   referralMaxBonusTickets: number;
   logPath: string;
   defaultLocale: SupportedLocale;
+  adminPanelUrl?: string;
+  adminPanelSecret?: string;
 };
 
 export function loadConfig(): AppConfig {
@@ -44,6 +48,8 @@ export function loadConfig(): AppConfig {
       .filter(Boolean),
   );
   const ownerUserId = parsed.data.OWNER_USER_ID.trim() || undefined;
+  const adminPanelUrl = parsed.data.ADMIN_PANEL_URL.trim() || undefined;
+  const adminPanelSecret = parsed.data.ADMIN_PANEL_SECRET.trim() || undefined;
 
   return {
     botToken: parsed.data.BOT_TOKEN,
@@ -55,5 +61,7 @@ export function loadConfig(): AppConfig {
     referralMaxBonusTickets: parsed.data.REFERRAL_MAX_BONUS_TICKETS,
     logPath: parsed.data.LOG_PATH,
     defaultLocale: parsed.data.DEFAULT_LOCALE,
+    ...(adminPanelUrl ? { adminPanelUrl } : {}),
+    ...(adminPanelSecret ? { adminPanelSecret } : {}),
   };
 }

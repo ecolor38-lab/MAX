@@ -88,5 +88,21 @@ describe("bot testable helpers", () => {
     assert.strictEqual(s2.shouldAlert, false);
     assert.strictEqual(s3.shouldAlert, true);
   });
+
+  it("builds signed admin panel url", () => {
+    const originalNow = Date.now;
+    Date.now = () => 1_700_000_000_000;
+    try {
+      const url = __testables.buildAdminPanelUrl("https://example.com/panel", "42", "secret");
+      const parsed = new URL(url);
+      assert.strictEqual(parsed.origin, "https://example.com");
+      assert.strictEqual(parsed.pathname, "/panel");
+      assert.strictEqual(parsed.searchParams.get("uid"), "42");
+      assert.strictEqual(parsed.searchParams.get("ts"), "1700000000000");
+      assert.strictEqual(parsed.searchParams.get("sig")?.length, 64);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
 });
 
