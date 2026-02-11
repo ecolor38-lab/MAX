@@ -57,7 +57,11 @@ describe("admin panel helpers", () => {
   it("performs draw action and stores winners", () => {
     const { repo } = mkRepo();
     repo.create(mkContest());
-    const message = __adminPanelTestables.performAction(repo, "c1", "draw", "admin-1");
+    const message = __adminPanelTestables.performAction(repo, {
+      contestId: "c1",
+      action: "draw",
+      actorId: "admin-1",
+    });
     const updated = repo.get("c1");
 
     assert.match(message, /Draw выполнен/);
@@ -65,5 +69,51 @@ describe("admin panel helpers", () => {
     assert.strictEqual(updated?.status, "completed");
     assert.strictEqual(updated?.winners.length, 1);
     assert.ok(updated?.drawSeed);
+  });
+
+  it("creates contest from panel action", () => {
+    const { repo } = mkRepo();
+    const message = __adminPanelTestables.performAction(repo, {
+      action: "create",
+      actorId: "admin-1",
+      titleInput: "Panel created",
+      endsAtInput: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      maxWinnersInput: "2",
+    });
+    const contests = repo.list();
+    assert.match(message, /Конкурс создан/);
+    assert.strictEqual(contests.length, 1);
+    assert.strictEqual(contests[0]?.title, "Panel created");
+    assert.strictEqual(contests[0]?.maxWinners, 2);
+  });
+
+  it("edits existing contest from panel action", () => {
+    const { repo } = mkRepo();
+    repo.create(mkContest());
+    const message = __adminPanelTestables.performAction(repo, {
+      contestId: "c1",
+      action: "edit",
+      actorId: "admin-1",
+      titleInput: "Edited title",
+      endsAtInput: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      maxWinnersInput: "3",
+    });
+    const updated = repo.get("c1");
+    assert.strictEqual(message, "Конкурс обновлен.");
+    assert.strictEqual(updated?.title, "Edited title");
+    assert.strictEqual(updated?.maxWinners, 3);
+  });
+
+  it("filters contests by query and status", () => {
+    const contests: Contest[] = [
+      mkContest({ id: "aa11", title: "Alpha", status: "active" }),
+      mkContest({ id: "bb22", title: "Beta", status: "completed" }),
+      mkContest({ id: "cc33", title: "Gamma", status: "active" }),
+    ];
+    const active = __adminPanelTestables.applyContestFilters(contests, "", "active");
+    const byQuery = __adminPanelTestables.applyContestFilters(contests, "bb", "all");
+    assert.strictEqual(active.length, 2);
+    assert.strictEqual(byQuery.length, 1);
+    assert.strictEqual(byQuery[0]?.id, "bb22");
   });
 });

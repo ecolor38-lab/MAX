@@ -1,13 +1,15 @@
 import crypto from "node:crypto";
 import http from "node:http";
 
-import { runDeterministicDraw } from "./draw";
 import type { AppConfig } from "./config";
+import { runDeterministicDraw } from "./draw";
 import type { AppLogger } from "./logger";
 import { ContestRepository } from "./repository";
 import type { Contest, ContestAuditEntry } from "./types";
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
+const FILTER_ALL = "all";
+type StatusFilter = Contest["status"] | typeof FILTER_ALL;
 
 function escapeHtml(input: string): string {
   return input
@@ -21,6 +23,19 @@ function escapeHtml(input: string): string {
 function withAuditEntry(contest: Contest, entry: ContestAuditEntry): Contest {
   const current = contest.auditLog ?? [];
   return { ...contest, auditLog: [...current, entry] };
+}
+
+function toDatetimeLocalValue(isoString: string): string {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const yyyy = String(date.getFullYear());
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
 }
 
 function buildAdminSignature(userId: string, ts: string, secret: string): string {
@@ -62,12 +77,45 @@ async function readPostBody(req: http.IncomingMessage): Promise<URLSearchParams>
   return new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
 }
 
-function renderPage(contests: Contest[], basePath: string, signedQuery: string, flashMessage?: string): string {
-  const rows = contests
+function parseStatusFilter(value: string | null): StatusFilter {
+  if (value === "active" || value === "completed" || value === "draft") {
+    return value;
+  }
+  return FILTER_ALL;
+}
+
+function applyContestFilters(contests: Contest[], query: string, status: StatusFilter): Contest[] {
+  const q = query.trim().toLowerCase();
+  return contests.filter((contest) => {
+    if (status !== FILTER_ALL && contest.status !== status) {
+      return false;
+    }
+    if (!q) {
+      return true;
+    }
+    return contest.id.toLowerCase().includes(q) || contest.title.toLowerCase().includes(q);
+  });
+}
+
+function renderPage(
+  contests: Contest[],
+  basePath: string,
+  signedParams: URLSearchParams,
+  filters: { query: string; status: StatusFilter },
+  flashMessage?: string,
+): string {
+  const filteredContests = applyContestFilters(contests, filters.query, filters.status);
+  const totalParticipants = filteredContests.reduce((acc, contest) => acc + contest.participants.length, 0);
+  const activeCount = filteredContests.filter((contest) => contest.status === "active").length;
+  const completedCount = filteredContests.filter((contest) => contest.status === "completed").length;
+  const signedQuery = signedParams.toString();
+
+  const rows = filteredContests
     .map((contest) => {
       const status = escapeHtml(contest.status);
       const title = escapeHtml(contest.title);
       const winners = escapeHtml(contest.winners.join(", ") || "-");
+      const endsAtLocal = escapeHtml(toDatetimeLocalValue(contest.endsAt));
       return `
       <tr>
         <td><code>${escapeHtml(contest.id)}</code></td>
@@ -77,16 +125,23 @@ function renderPage(contests: Contest[], basePath: string, signedQuery: string, 
         <td>${escapeHtml(contest.endsAt)}</td>
         <td>${winners}</td>
         <td>
-          <form method="post" action="${basePath}/action?${signedQuery}" style="display:inline">
+          <form method="post" action="${basePath}/action?${signedQuery}&q=${encodeURIComponent(filters.query)}&status=${encodeURIComponent(filters.status)}" class="inline">
             <input type="hidden" name="contestId" value="${escapeHtml(contest.id)}" />
             <button name="action" value="draw">Draw</button>
             <button name="action" value="reroll">Reroll</button>
             <button name="action" value="close">Close</button>
           </form>
-          <form method="post" action="${basePath}/action?${signedQuery}" style="display:inline">
+          <form method="post" action="${basePath}/action?${signedQuery}&q=${encodeURIComponent(filters.query)}&status=${encodeURIComponent(filters.status)}" class="inline">
             <input type="hidden" name="contestId" value="${escapeHtml(contest.id)}" />
             <input type="datetime-local" name="endsAt" required />
             <button name="action" value="reopen">Reopen</button>
+          </form>
+          <form method="post" action="${basePath}/action?${signedQuery}&q=${encodeURIComponent(filters.query)}&status=${encodeURIComponent(filters.status)}" class="inline">
+            <input type="hidden" name="contestId" value="${escapeHtml(contest.id)}" />
+            <input type="text" name="title" value="${title}" required />
+            <input type="datetime-local" name="endsAt" value="${endsAtLocal}" required />
+            <input type="number" name="maxWinners" min="1" value="${contest.maxWinners}" required />
+            <button name="action" value="edit">Edit</button>
           </form>
         </td>
       </tr>`;
@@ -106,12 +161,44 @@ function renderPage(contests: Contest[], basePath: string, signedQuery: string, 
       code { color: #93c5fd; }
       button { margin-right: 6px; margin-top: 4px; }
       .flash { background: #1e293b; padding: 10px; border-left: 4px solid #22c55e; margin-bottom: 12px; }
+      .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+      .metrics { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+      .metric { background: #1f2937; border: 1px solid #334155; padding: 6px 10px; border-radius: 6px; font-size: 13px; }
+      input, select, button { background: #0b1220; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 6px 8px; }
+      form.inline { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     </style>
   </head>
   <body>
     <h1>MAX Contest Admin</h1>
     ${flashMessage ? `<div class="flash">${escapeHtml(flashMessage)}</div>` : ""}
     <p>Действия выполняются от имени пользователя, который открыл подписанную ссылку.</p>
+    <div class="toolbar">
+      <form method="get" action="${basePath}" class="inline">
+        <input type="hidden" name="uid" value="${escapeHtml(signedParams.get("uid") ?? "")}" />
+        <input type="hidden" name="ts" value="${escapeHtml(signedParams.get("ts") ?? "")}" />
+        <input type="hidden" name="sig" value="${escapeHtml(signedParams.get("sig") ?? "")}" />
+        <input type="text" name="q" placeholder="Поиск по ID/названию" value="${escapeHtml(filters.query)}" />
+        <select name="status">
+          <option value="all"${filters.status === FILTER_ALL ? " selected" : ""}>Все статусы</option>
+          <option value="active"${filters.status === "active" ? " selected" : ""}>active</option>
+          <option value="completed"${filters.status === "completed" ? " selected" : ""}>completed</option>
+          <option value="draft"${filters.status === "draft" ? " selected" : ""}>draft</option>
+        </select>
+        <button type="submit">Применить</button>
+      </form>
+      <form method="post" action="${basePath}/action?${signedQuery}&q=${encodeURIComponent(filters.query)}&status=${encodeURIComponent(filters.status)}" class="inline">
+        <input type="text" name="title" placeholder="Название конкурса" required />
+        <input type="datetime-local" name="endsAt" required />
+        <input type="number" name="maxWinners" min="1" value="1" required />
+        <button name="action" value="create">Create</button>
+      </form>
+    </div>
+    <div class="metrics">
+      <div class="metric">Всего: ${filteredContests.length}</div>
+      <div class="metric">Active: ${activeCount}</div>
+      <div class="metric">Completed: ${completedCount}</div>
+      <div class="metric">Участников: ${totalParticipants}</div>
+    </div>
     <table>
       <thead>
         <tr>
@@ -119,7 +206,7 @@ function renderPage(contests: Contest[], basePath: string, signedQuery: string, 
         </tr>
       </thead>
       <tbody>
-        ${rows || '<tr><td colspan="7">Конкурсы отсутствуют</td></tr>'}
+        ${rows || '<tr><td colspan="7">Конкурсы по фильтру отсутствуют</td></tr>'}
       </tbody>
     </table>
   </body>
@@ -128,14 +215,96 @@ function renderPage(contests: Contest[], basePath: string, signedQuery: string, 
 
 function performAction(
   repository: ContestRepository,
-  contestId: string,
-  action: string,
-  actorId: string,
-  endsAtInput?: string,
+  input: {
+    contestId?: string;
+    action: string;
+    actorId: string;
+    endsAtInput?: string;
+    titleInput?: string;
+    maxWinnersInput?: string;
+  },
 ): string {
+  if (input.action === "create") {
+    const title = input.titleInput?.trim() ?? "";
+    const parsedDate = new Date(input.endsAtInput ?? "");
+    const parsedWinners = Number(input.maxWinnersInput ?? "1");
+    if (!title) {
+      return "Укажите название конкурса.";
+    }
+    if (Number.isNaN(parsedDate.getTime()) || parsedDate.getTime() <= Date.now()) {
+      return "Укажите корректную будущую дату окончания.";
+    }
+    if (!Number.isFinite(parsedWinners) || parsedWinners < 1) {
+      return "maxWinners должен быть числом >= 1.";
+    }
+
+    const contest: Contest = {
+      id: crypto.randomBytes(4).toString("hex"),
+      title,
+      createdBy: input.actorId,
+      createdAt: new Date().toISOString(),
+      endsAt: parsedDate.toISOString(),
+      maxWinners: Math.floor(parsedWinners),
+      status: "active",
+      requiredChats: [],
+      participants: [],
+      winners: [],
+      auditLog: [
+        {
+          at: new Date().toISOString(),
+          action: "created",
+          actorId: input.actorId,
+          details: "Создан через web-панель",
+        },
+      ],
+    };
+    repository.create(contest);
+    return `Конкурс создан: ${contest.id}.`;
+  }
+
+  const contestId = input.contestId?.trim() ?? "";
+  if (!contestId) {
+    return "contestId обязателен.";
+  }
+  const action = input.action;
+  const actorId = input.actorId;
+  const endsAtInput = input.endsAtInput;
   const contest = repository.get(contestId);
   if (!contest) {
     return "Конкурс не найден.";
+  }
+
+  if (action === "edit") {
+    const title = input.titleInput?.trim() ?? "";
+    const parsedDate = new Date(endsAtInput ?? "");
+    const parsedWinners = Number(input.maxWinnersInput ?? String(contest.maxWinners));
+    if (!title) {
+      return "Укажите название конкурса.";
+    }
+    if (Number.isNaN(parsedDate.getTime())) {
+      return "Укажите корректную дату окончания.";
+    }
+    if (!Number.isFinite(parsedWinners) || parsedWinners < 1) {
+      return "maxWinners должен быть числом >= 1.";
+    }
+
+    repository.update(contest.id, (prev) =>
+      withAuditEntry(
+        {
+          ...prev,
+          title,
+          endsAt: parsedDate.toISOString(),
+          maxWinners: Math.floor(parsedWinners),
+        },
+        {
+          at: new Date().toISOString(),
+          action: "edited",
+          actorId,
+          details: "Изменен через web-панель",
+        },
+      ),
+    );
+    return "Конкурс обновлен.";
   }
 
   if (action === "close") {
@@ -253,15 +422,17 @@ export function createAdminPanelServer(
       return;
     }
 
-    const signedQuery = new URLSearchParams({
+    const signedParams = new URLSearchParams({
       uid: requestUrl.searchParams.get("uid") ?? "",
       ts: requestUrl.searchParams.get("ts") ?? "",
       sig: requestUrl.searchParams.get("sig") ?? "",
-    }).toString();
+    });
 
     if (method === "GET" && pathName === basePath) {
       const flash = requestUrl.searchParams.get("m") ?? undefined;
-      const html = renderPage(repository.list(), basePath, signedQuery, flash);
+      const query = requestUrl.searchParams.get("q") ?? "";
+      const status = parseStatusFilter(requestUrl.searchParams.get("status"));
+      const html = renderPage(repository.list(), basePath, signedParams, { query, status }, flash);
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(html);
       return;
@@ -270,11 +441,28 @@ export function createAdminPanelServer(
     if (method === "POST" && pathName === `${basePath}/action`) {
       const body = await readPostBody(req);
       const action = body.get("action") ?? "";
-      const contestId = body.get("contestId") ?? "";
+      const contestId = body.get("contestId") ?? undefined;
       const endsAt = body.get("endsAt") ?? undefined;
-      const message = performAction(repository, contestId, action, verification.userId, endsAt);
+      const title = body.get("title") ?? undefined;
+      const maxWinners = body.get("maxWinners") ?? undefined;
+      const actionInput: Parameters<typeof performAction>[1] = {
+        action,
+        actorId: verification.userId,
+        ...(contestId ? { contestId } : {}),
+        ...(endsAt ? { endsAtInput: endsAt } : {}),
+        ...(title ? { titleInput: title } : {}),
+        ...(maxWinners ? { maxWinnersInput: maxWinners } : {}),
+      };
+      const message = performAction(repository, actionInput);
       logger.info("admin_panel_action", { action, contestId, actorId: verification.userId, message });
-      res.writeHead(302, { Location: `${basePath}?${signedQuery}&m=${encodeURIComponent(message)}` });
+
+      const query = requestUrl.searchParams.get("q") ?? "";
+      const status = requestUrl.searchParams.get("status") ?? FILTER_ALL;
+      res.writeHead(302, {
+        Location: `${basePath}?${signedParams.toString()}&q=${encodeURIComponent(query)}&status=${encodeURIComponent(
+          status,
+        )}&m=${encodeURIComponent(message)}`,
+      });
       res.end();
       return;
     }
@@ -291,7 +479,9 @@ export function createAdminPanelServer(
 }
 
 export const __adminPanelTestables = {
+  applyContestFilters,
   buildAdminSignature,
-  verifyAdminSignature,
   performAction,
+  toDatetimeLocalValue,
+  verifyAdminSignature,
 };
