@@ -4,12 +4,16 @@ const EnvSchema = z.object({
   BOT_TOKEN: z.string().min(10, "BOT_TOKEN is required"),
   ADMIN_USER_IDS: z.string().optional().default(""),
   STORAGE_PATH: z.string().optional().default("data/contests.json"),
+  REFERRAL_BONUS_TICKETS: z.coerce.number().int().min(0).default(1),
+  REFERRAL_MAX_BONUS_TICKETS: z.coerce.number().int().min(0).default(5),
 });
 
 export type AppConfig = {
   botToken: string;
   adminUserIds: Set<string>;
   storagePath: string;
+  referralBonusTickets: number;
+  referralMaxBonusTickets: number;
 };
 
 export function loadConfig(): AppConfig {
@@ -30,5 +34,7 @@ export function loadConfig(): AppConfig {
     botToken: parsed.data.BOT_TOKEN,
     adminUserIds,
     storagePath: parsed.data.STORAGE_PATH,
+    referralBonusTickets: parsed.data.REFERRAL_BONUS_TICKETS,
+    referralMaxBonusTickets: parsed.data.REFERRAL_MAX_BONUS_TICKETS,
   };
 }

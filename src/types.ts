@@ -5,6 +5,8 @@ export interface Participant {
   username?: string;
   joinedAt: string;
   tickets: number;
+  referredBy?: string;
+  referralsCount?: number;
 }
 
 export interface Contest {
@@ -15,7 +17,7 @@ export interface Contest {
   endsAt: string;
   maxWinners: number;
   status: ContestStatus;
-  requiredChats: string[];
+  requiredChats: number[];
   participants: Participant[];
   winners: string[];
   drawSeed?: string;

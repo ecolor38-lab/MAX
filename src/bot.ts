@@ -5,7 +5,7 @@ import { Bot, Keyboard } from "@maxhub/max-bot-api";
 import type { AppConfig } from "./config";
 import { runDeterministicDraw } from "./draw";
 import { ContestRepository } from "./repository";
-import type { Contest } from "./types";
+import type { Contest, Participant } from "./types";
 
 type Ctx = any;
 
@@ -46,15 +46,62 @@ function isAdmin(config: AppConfig, userId: string): boolean {
   return config.adminUserIds.has(userId);
 }
 
-function toContestLine(contest: Contest): string {
-  return `#${contest.id} | ${contest.title} | status=${contest.status} | participants=${contest.participants.length} | winners=${contest.maxWinners}`;
+function parseRequiredChatIds(raw: string): number[] {
+  return raw
+    .split(/[,\s]+/)
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isFinite(value));
 }
 
-function tryJoinContest(
+function parseJoinArgs(raw: string): { contestId: string; referrerId?: string } {
+  const [contestId = "", referrerIdRaw] = raw.split(/\s+/).filter(Boolean);
+  const referrerId = referrerIdRaw?.trim();
+  if (!referrerId) {
+    return { contestId };
+  }
+  return { contestId, referrerId };
+}
+
+function toContestLine(contest: Contest): string {
+  return `#${contest.id} | ${contest.title} | status=${contest.status} | participants=${contest.participants.length} | winners=${contest.maxWinners} | requiredChats=${contest.requiredChats.length}`;
+}
+
+async function findMissingRequiredChats(
+  bot: Bot,
+  requiredChats: number[],
+  userId: number,
+): Promise<number[]> {
+  const checks = await Promise.all(
+    requiredChats.map(async (chatId) => {
+      try {
+        const response = await bot.api.getChatMembers(chatId, { user_ids: [userId] });
+        const members = Array.isArray((response as { members?: unknown[] }).members)
+          ? ((response as { members?: unknown[] }).members ?? [])
+          : [];
+
+        const isMember = members.some((member) => {
+          const candidateId = Number((member as { user_id?: number }).user_id);
+          return Number.isFinite(candidateId) && candidateId === userId;
+        });
+
+        return isMember ? null : chatId;
+      } catch {
+        return chatId;
+      }
+    }),
+  );
+
+  return checks.filter((chatId): chatId is number => chatId !== null);
+}
+
+async function tryJoinContest(
+  bot: Bot,
+  config: AppConfig,
   repository: ContestRepository,
   contestId: string,
   user: { id: string; username?: string },
-): { ok: true; contest: Contest; already: boolean } | { ok: false; message: string } {
+  referrerId?: string,
+): Promise<{ ok: true; contest: Contest; already: boolean } | { ok: false; message: string }> {
   const contest = repository.get(contestId);
   if (!contest) {
     return { ok: false, message: "Конкурс не найден." };
@@ -66,19 +113,80 @@ function tryJoinContest(
     return { ok: false, message: "Срок участия в этом конкурсе уже вышел." };
   }
 
+  if (contest.requiredChats.length > 0) {
+    const userId = Number(user.id);
+    if (!Number.isFinite(userId)) {
+      return {
+        ok: false,
+        message: "Не удалось проверить подписки для участия. Попробуйте позже.",
+      };
+    }
+
+    const missingChats = await findMissingRequiredChats(bot, contest.requiredChats, userId);
+    if (missingChats.length > 0) {
+      return {
+        ok: false,
+        message: `Для участия подпишитесь на обязательные чаты: ${missingChats.join(", ")}`,
+      };
+    }
+  }
+
   const already = contest.participants.some((participant) => participant.userId === user.id);
   if (already) {
     return { ok: true, contest, already: true };
   }
 
-  const participant = {
-    userId: user.id,
-    joinedAt: new Date().toISOString(),
-    tickets: 1,
-    ...(user.username ? { username: user.username } : {}),
-  };
+  const updated = repository.update(contestId, (currentContest) => {
+    const currentAlready = currentContest.participants.some((p) => p.userId === user.id);
+    if (currentAlready) {
+      return currentContest;
+    }
 
-  const updated = repository.addParticipant(contestId, participant);
+    const participant: Participant = {
+      userId: user.id,
+      joinedAt: new Date().toISOString(),
+      tickets: 1,
+      ...(user.username ? { username: user.username } : {}),
+    };
+
+    const participants = [...currentContest.participants, participant];
+    if (!referrerId || referrerId === user.id) {
+      return { ...currentContest, participants };
+    }
+
+    const referrerIndex = participants.findIndex((p) => p.userId === referrerId);
+    if (referrerIndex < 0) {
+      return { ...currentContest, participants };
+    }
+
+    const referrer = participants[referrerIndex];
+    if (!referrer) {
+      return { ...currentContest, participants };
+    }
+
+    const currentBonus = Math.max(0, (referrer.tickets ?? 1) - 1);
+    const bonusLeft = Math.max(0, config.referralMaxBonusTickets - currentBonus);
+    const addBonus = Math.min(config.referralBonusTickets, bonusLeft);
+    if (addBonus <= 0) {
+      participants[participants.length - 1] = {
+        ...participant,
+        referredBy: referrerId,
+      };
+      return { ...currentContest, participants };
+    }
+
+    participants[referrerIndex] = {
+      ...referrer,
+      tickets: referrer.tickets + addBonus,
+      referralsCount: (referrer.referralsCount ?? 0) + 1,
+    };
+    participants[participants.length - 1] = {
+      ...participant,
+      referredBy: referrerId,
+    };
+
+    return { ...currentContest, participants };
+  });
   if (!updated) {
     return { ok: false, message: "Не удалось зарегистрировать участие." };
   }
@@ -109,17 +217,23 @@ async function autoFinishExpiredContests(bot: Bot, repository: ContestRepository
       continue;
     }
 
-    if (updated.publishChatId) {
-      await bot.api.sendMessageToChat(
-        updated.publishChatId,
-        [
-          `Итоги конкурса: ${updated.title}`,
-          `Победители: ${updated.winners.join(", ") || "нет победителей"}`,
-          `Proof seed: ${updated.drawSeed ?? "-"}`,
-        ].join("\n"),
-      );
-    }
+    await publishContestResults(bot, updated);
   }
+}
+
+async function publishContestResults(bot: Bot, contest: Contest): Promise<void> {
+  if (!contest.publishChatId) {
+    return;
+  }
+
+  await bot.api.sendMessageToChat(
+    contest.publishChatId,
+    [
+      `Итоги конкурса: ${contest.title}`,
+      `Победители: ${contest.winners.join(", ") || "нет победителей"}`,
+      `Proof seed: ${contest.drawSeed ?? "-"}`,
+    ].join("\n"),
+  );
 }
 
 export function createContestBot(config: AppConfig): Bot {
@@ -134,6 +248,8 @@ export function createContestBot(config: AppConfig): Bot {
       description: "Создать конкурс: /newcontest Название | 2026-12-31T20:00:00Z | 3",
     },
     { name: "contests", description: "Показать конкурсы" },
+    { name: "setrequired", description: "Обязательные чаты: /setrequired contest_id chat1,chat2" },
+    { name: "myref", description: "Рефкод: /myref contest_id" },
     { name: "join", description: "Участвовать: /join contest_id" },
     { name: "publish", description: "Опубликовать конкурс: /publish contest_id chat_id [текст]" },
     { name: "draw", description: "Выбрать победителей: /draw contest_id" },
@@ -149,7 +265,9 @@ export function createContestBot(config: AppConfig): Bot {
         "/whoami",
         "/newcontest Название | ISO-дата-окончания | число_победителей",
         "/contests",
-        "/join contest_id",
+        "/setrequired contest_id chat_id[,chat_id2,...]",
+        "/myref contest_id",
+        "/join contest_id [referrer_user_id]",
         "/publish contest_id chat_id [текст_поста]",
         "/draw contest_id (только админ)",
         "/reroll contest_id (только админ)",
@@ -218,18 +336,52 @@ export function createContestBot(config: AppConfig): Bot {
     return ctx.reply(["Текущие конкурсы:", ...contests.map(toContestLine)].join("\n"));
   });
 
-  bot.command("join", (ctx: Ctx) => {
+  bot.command("setrequired", (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      return ctx.reply("Не удалось определить пользователя.");
+    }
+    if (!isAdmin(config, user.id)) {
+      return ctx.reply("Эта команда доступна только администраторам.");
+    }
+
+    const argsRaw = parseCommandArgs(extractText(ctx));
+    const [contestId, ...rawChatParts] = argsRaw.split(" ").filter(Boolean);
+    if (!contestId || rawChatParts.length === 0) {
+      return ctx.reply("Формат: /setrequired contest_id chat_id[,chat_id2,...]");
+    }
+
+    const requiredChats = parseRequiredChatIds(rawChatParts.join(" "));
+    const uniqueRequiredChats = [...new Set(requiredChats)];
+    if (uniqueRequiredChats.length === 0) {
+      return ctx.reply("Нужно передать хотя бы один валидный числовой chat_id.");
+    }
+
+    const updated = repository.update(contestId, (contest) => ({
+      ...contest,
+      requiredChats: uniqueRequiredChats,
+    }));
+    if (!updated) {
+      return ctx.reply("Конкурс не найден.");
+    }
+
+    return ctx.reply(
+      `Обязательные чаты для конкурса "${updated.title}" обновлены: ${updated.requiredChats.join(", ")}`,
+    );
+  });
+
+  bot.command("join", async (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
       return ctx.reply("Не удалось определить пользователя.");
     }
 
-    const contestId = parseCommandArgs(extractText(ctx));
+    const { contestId, referrerId } = parseJoinArgs(parseCommandArgs(extractText(ctx)));
     if (!contestId) {
-      return ctx.reply("Укажите ID конкурса: /join contest_id");
+      return ctx.reply("Укажите ID конкурса: /join contest_id [referrer_user_id]");
     }
 
-    const result = tryJoinContest(repository, contestId, user);
+    const result = await tryJoinContest(bot, config, repository, contestId, user, referrerId);
     if (!result.ok) {
       return ctx.reply(result.message);
     }
@@ -241,6 +393,32 @@ export function createContestBot(config: AppConfig): Bot {
 
     return ctx.reply(
       `Вы участвуете в конкурсе "${result.contest.title}". Всего участников: ${result.contest.participants.length}`,
+    );
+  });
+
+  bot.command("myref", (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      return ctx.reply("Не удалось определить пользователя.");
+    }
+
+    const contestId = parseCommandArgs(extractText(ctx));
+    if (!contestId) {
+      return ctx.reply("Формат: /myref contest_id");
+    }
+
+    const contest = repository.get(contestId);
+    if (!contest) {
+      return ctx.reply("Конкурс не найден.");
+    }
+
+    return ctx.reply(
+      [
+        `Ваш ref ID: ${user.id}`,
+        `Приглашайте так: /join ${contestId} ${user.id}`,
+        `Бонус за реферала: +${config.referralBonusTickets} бил.`,
+        `Макс бонус на пользователя: +${config.referralMaxBonusTickets} бил.`,
+      ].join("\n"),
     );
   });
 
@@ -270,7 +448,15 @@ export function createContestBot(config: AppConfig): Bot {
 
     const postText =
       textParts.join(" ").trim() ||
-      `Конкурс: ${contest.title}\nУсловия: нажать кнопку "Участвовать"\nОкончание: ${contest.endsAt}`;
+      [
+        `Конкурс: ${contest.title}`,
+        'Условия: нажать кнопку "Участвовать"',
+        `Окончание: ${contest.endsAt}`,
+        `Рефералка: /myref ${contest.id} (бонус +${config.referralBonusTickets}, лимит +${config.referralMaxBonusTickets})`,
+        contest.requiredChats.length > 0
+          ? `Обязательные чаты: ${contest.requiredChats.join(", ")}`
+          : "Обязательных чатов нет",
+      ].join("\n");
 
     const message = await bot.api.sendMessageToChat(chatId, postText, {
       attachments: [
@@ -301,7 +487,7 @@ export function createContestBot(config: AppConfig): Bot {
       return;
     }
 
-    const result = tryJoinContest(repository, contestId, user);
+    const result = await tryJoinContest(bot, config, repository, contestId, user);
     if (!result.ok) {
       await ctx.answerOnCallback({ notification: result.message });
       return;
@@ -347,6 +533,8 @@ export function createContestBot(config: AppConfig): Bot {
     if (!updated) {
       return ctx.reply("Не удалось завершить конкурс.");
     }
+
+    void publishContestResults(bot, updated);
 
     return ctx.reply(
       [
@@ -394,6 +582,8 @@ export function createContestBot(config: AppConfig): Bot {
     if (!updated) {
       return ctx.reply("Не удалось выполнить reroll.");
     }
+
+    void publishContestResults(bot, updated);
 
     return ctx.reply(
       [
