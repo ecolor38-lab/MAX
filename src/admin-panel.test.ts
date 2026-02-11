@@ -54,6 +54,22 @@ describe("admin panel helpers", () => {
     assert.deepStrictEqual(check, { ok: false });
   });
 
+  it("supports configurable token ttl", () => {
+    const originalNow = Date.now;
+    Date.now = () => 2_000_000;
+    try {
+      const ts = String(1_000_000);
+      const sig = __adminPanelTestables.buildAdminSignature("42", ts, "secret");
+      const params = new URLSearchParams({ uid: "42", ts, sig });
+      const strict = __adminPanelTestables.verifyAdminSignatureWithTtl(params, "secret", 100_000);
+      const relaxed = __adminPanelTestables.verifyAdminSignatureWithTtl(params, "secret", 2_000_000);
+      assert.deepStrictEqual(strict, { ok: false });
+      assert.deepStrictEqual(relaxed, { ok: true, userId: "42" });
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
   it("performs draw action and stores winners", () => {
     const { repo } = mkRepo();
     repo.create(mkContest());
@@ -175,5 +191,22 @@ describe("admin panel helpers", () => {
     assert.strictEqual(report.byAction.draw, 1);
     assert.strictEqual(report.byAction.edited, 1);
     assert.strictEqual(report.recent[0]?.contestId, "r2");
+  });
+
+  it("normalizes ip and checks allowlist", () => {
+    assert.strictEqual(__adminPanelTestables.normalizeIp("::ffff:127.0.0.1"), "127.0.0.1");
+    assert.strictEqual(__adminPanelTestables.normalizeIp("127.0.0.1"), "127.0.0.1");
+    assert.strictEqual(__adminPanelTestables.isIpAllowed("127.0.0.1", new Set()), true);
+    assert.strictEqual(__adminPanelTestables.isIpAllowed("127.0.0.1", new Set(["1.1.1.1"])), false);
+    assert.strictEqual(__adminPanelTestables.isIpAllowed("127.0.0.1", new Set(["127.0.0.1"])), true);
+  });
+
+  it("enforces sliding window rate limit", () => {
+    const state = new Map<string, { count: number; windowStart: number }>();
+    const key = "127.0.0.1:/adminpanel/audit";
+    assert.strictEqual(__adminPanelTestables.hitRateLimit(state, key, 1000, 10_000, 2), true);
+    assert.strictEqual(__adminPanelTestables.hitRateLimit(state, key, 1001, 10_000, 2), true);
+    assert.strictEqual(__adminPanelTestables.hitRateLimit(state, key, 1002, 10_000, 2), false);
+    assert.strictEqual(__adminPanelTestables.hitRateLimit(state, key, 20_000, 10_000, 2), true);
   });
 });

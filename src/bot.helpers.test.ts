@@ -15,6 +15,10 @@ function mkConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     logPath: "data/test.log",
     defaultLocale: "ru",
     adminPanelPort: 8787,
+    adminPanelTokenTtlMs: 600_000,
+    adminPanelRateLimitWindowMs: 60_000,
+    adminPanelRateLimitMax: 120,
+    adminPanelIpAllowlist: new Set(),
   };
   return Object.assign(base, overrides);
 }

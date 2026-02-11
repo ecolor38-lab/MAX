@@ -14,6 +14,10 @@ const EnvSchema = z.object({
   ADMIN_PANEL_URL: z.string().optional().default(""),
   ADMIN_PANEL_SECRET: z.string().optional().default(""),
   ADMIN_PANEL_PORT: z.coerce.number().int().min(1).max(65535).default(8787),
+  ADMIN_PANEL_TOKEN_TTL_MS: z.coerce.number().int().min(10_000).default(10 * 60 * 1000),
+  ADMIN_PANEL_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1_000).default(60_000),
+  ADMIN_PANEL_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(120),
+  ADMIN_PANEL_IP_ALLOWLIST: z.string().optional().default(""),
 });
 
 export type AppConfig = {
@@ -29,6 +33,10 @@ export type AppConfig = {
   adminPanelUrl?: string;
   adminPanelSecret?: string;
   adminPanelPort: number;
+  adminPanelTokenTtlMs: number;
+  adminPanelRateLimitWindowMs: number;
+  adminPanelRateLimitMax: number;
+  adminPanelIpAllowlist: Set<string>;
 };
 
 export function loadConfig(): AppConfig {
@@ -52,6 +60,11 @@ export function loadConfig(): AppConfig {
   const ownerUserId = parsed.data.OWNER_USER_ID.trim() || undefined;
   const adminPanelUrl = parsed.data.ADMIN_PANEL_URL.trim() || undefined;
   const adminPanelSecret = parsed.data.ADMIN_PANEL_SECRET.trim() || undefined;
+  const adminPanelIpAllowlist = new Set(
+    parsed.data.ADMIN_PANEL_IP_ALLOWLIST.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
 
   return {
     botToken: parsed.data.BOT_TOKEN,
@@ -64,6 +77,10 @@ export function loadConfig(): AppConfig {
     logPath: parsed.data.LOG_PATH,
     defaultLocale: parsed.data.DEFAULT_LOCALE,
     adminPanelPort: parsed.data.ADMIN_PANEL_PORT,
+    adminPanelTokenTtlMs: parsed.data.ADMIN_PANEL_TOKEN_TTL_MS,
+    adminPanelRateLimitWindowMs: parsed.data.ADMIN_PANEL_RATE_LIMIT_WINDOW_MS,
+    adminPanelRateLimitMax: parsed.data.ADMIN_PANEL_RATE_LIMIT_MAX,
+    adminPanelIpAllowlist,
     ...(adminPanelUrl ? { adminPanelUrl } : {}),
     ...(adminPanelSecret ? { adminPanelSecret } : {}),
   };

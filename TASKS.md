@@ -27,6 +27,7 @@
 - [x] Продвинутый UX v2 (пагинация, массовые действия, экспорт, графики)
 - [x] Admin API отчеты (export CSV + audit JSON)
 - [x] Smoke/integration тесты mini-app endpoint’ов (`/health`, `/audit`, `/export`)
+- [x] Security hardening mini-app (TTL подписи, IP allowlist, rate-limit)
 
 ## 1) Текущий спринт
 

@@ -13,6 +13,7 @@ type StatusFilter = Contest["status"] | typeof FILTER_ALL;
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
 type BulkAction = "bulk_close" | "bulk_draw" | "bulk_reroll";
+type RateLimitState = { count: number; windowStart: number };
 
 function escapeHtml(input: string): string {
   return input
@@ -70,6 +71,74 @@ function verifyAdminSignature(params: URLSearchParams, secret: string): { ok: tr
   }
 
   return { ok: true, userId };
+}
+
+function verifyAdminSignatureWithTtl(
+  params: URLSearchParams,
+  secret: string,
+  ttlMs: number,
+): { ok: true; userId: string } | { ok: false } {
+  const userId = params.get("uid")?.trim() ?? "";
+  const ts = params.get("ts")?.trim() ?? "";
+  const sig = params.get("sig")?.trim() ?? "";
+  if (!userId || !ts || !sig) {
+    return { ok: false };
+  }
+
+  const tsNum = Number(ts);
+  if (!Number.isFinite(tsNum) || Math.abs(Date.now() - tsNum) > ttlMs) {
+    return { ok: false };
+  }
+
+  const expected = buildAdminSignature(userId, ts, secret);
+  const left = Buffer.from(sig, "hex");
+  const right = Buffer.from(expected, "hex");
+  if (left.length === 0 || left.length !== right.length) {
+    return { ok: false };
+  }
+
+  if (!crypto.timingSafeEqual(left, right)) {
+    return { ok: false };
+  }
+
+  return { ok: true, userId };
+}
+
+function normalizeIp(rawIp?: string): string {
+  if (!rawIp) {
+    return "";
+  }
+  const v = rawIp.trim();
+  if (v.startsWith("::ffff:")) {
+    return v.slice("::ffff:".length);
+  }
+  return v;
+}
+
+function isIpAllowed(ip: string, allowlist: Set<string>): boolean {
+  if (allowlist.size === 0) {
+    return true;
+  }
+  return allowlist.has(ip);
+}
+
+function hitRateLimit(
+  state: Map<string, RateLimitState>,
+  key: string,
+  now: number,
+  windowMs: number,
+  maxRequests: number,
+): boolean {
+  const current = state.get(key);
+  if (!current || now - current.windowStart >= windowMs) {
+    state.set(key, { count: 1, windowStart: now });
+    return true;
+  }
+  if (current.count >= maxRequests) {
+    return false;
+  }
+  state.set(key, { count: current.count + 1, windowStart: current.windowStart });
+  return true;
 }
 
 async function readPostBody(req: http.IncomingMessage): Promise<URLSearchParams> {
@@ -552,12 +621,14 @@ export function createAdminPanelServer(
   const panelUrl = new URL(config.adminPanelUrl);
   const basePath = panelUrl.pathname || "/adminpanel";
   const secret = config.adminPanelSecret || config.botToken;
+  const rateLimitState = new Map<string, RateLimitState>();
 
   const server = http.createServer(async (req, res) => {
     const method = req.method ?? "GET";
     const host = req.headers.host || "localhost";
     const requestUrl = new URL(req.url ?? "/", `http://${host}`);
     const pathName = requestUrl.pathname;
+    const clientIp = normalizeIp(req.socket.remoteAddress);
 
     if (pathName === "/health") {
       res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
@@ -576,7 +647,36 @@ export function createAdminPanelServer(
       return;
     }
 
-    const verification = verifyAdminSignature(requestUrl.searchParams, secret);
+    if (!isIpAllowed(clientIp, config.adminPanelIpAllowlist)) {
+      res.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Forbidden");
+      return;
+    }
+
+    const rateKey = `${clientIp}:${pathName}`;
+    const now = Date.now();
+    if (
+      !hitRateLimit(
+        rateLimitState,
+        rateKey,
+        now,
+        config.adminPanelRateLimitWindowMs,
+        config.adminPanelRateLimitMax,
+      )
+    ) {
+      res.writeHead(429, {
+        "content-type": "text/plain; charset=utf-8",
+        "retry-after": String(Math.ceil(config.adminPanelRateLimitWindowMs / 1000)),
+      });
+      res.end("Too Many Requests");
+      return;
+    }
+
+    const verification = verifyAdminSignatureWithTtl(
+      requestUrl.searchParams,
+      secret,
+      config.adminPanelTokenTtlMs,
+    );
     if (!verification.ok) {
       res.writeHead(401, { "content-type": "text/plain; charset=utf-8" });
       res.end("Unauthorized");
@@ -682,9 +782,13 @@ export const __adminPanelTestables = {
   buildAuditReport,
   buildAdminSignature,
   buildContestCsv,
+  hitRateLimit,
+  isIpAllowed,
+  normalizeIp,
   paginateContests,
   performBulkAction,
   performAction,
   toDatetimeLocalValue,
   verifyAdminSignature,
+  verifyAdminSignatureWithTtl,
 };

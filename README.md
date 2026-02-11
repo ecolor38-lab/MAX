@@ -49,6 +49,10 @@ docker compose logs -f
 - `ADMIN_PANEL_URL` - URL вашей веб-админки (опционально).
 - `ADMIN_PANEL_SECRET` - секрет подписи ссылок в админку (опционально, иначе используется `BOT_TOKEN`).
 - `ADMIN_PANEL_PORT` - порт встроенной web mini-app панели (по умолчанию `8787`).
+- `ADMIN_PANEL_TOKEN_TTL_MS` - TTL подписанного URL админки в миллисекундах.
+- `ADMIN_PANEL_RATE_LIMIT_WINDOW_MS` - окно rate-limit для mini-app endpoint’ов.
+- `ADMIN_PANEL_RATE_LIMIT_MAX` - максимум запросов за окно на IP+route.
+- `ADMIN_PANEL_IP_ALLOWLIST` - allowlist IP через запятую (опционально).
 
 ## Формат создания конкурса
 
@@ -90,6 +94,10 @@ docker compose logs -f
   - `${ADMIN_PANEL_URL}/export` — CSV отчет по фильтрам (`q`, `status`).
   - `${ADMIN_PANEL_URL}/audit` — JSON сводка аудита по фильтрам (`q`, `status`).
 - В проекте есть smoke/integration тесты для endpoint’ов панели (`/health`, `/audit`, `/export`).
+- Security hardening панели:
+  - configurable TTL подписи (`ADMIN_PANEL_TOKEN_TTL_MS`);
+  - IP allowlist (`ADMIN_PANEL_IP_ALLOWLIST`);
+  - rate-limit на endpoint’ы (`ADMIN_PANEL_RATE_LIMIT_WINDOW_MS` + `ADMIN_PANEL_RATE_LIMIT_MAX`).
 
 ## Роли и доступы
 
