@@ -54,6 +54,7 @@ npm run dev
 ```text
 /myref contest_id
 /join contest_id referrer_user_id
+/start join:contest_id:referrer_user_id
 ```
 
 - Базово у каждого участника 1 билет.
@@ -61,3 +62,4 @@ npm run dev
   - `REFERRAL_BONUS_TICKETS` за каждого приглашенного.
   - Но не больше `REFERRAL_MAX_BONUS_TICKETS` суммарно на одного пользователя.
 - Жеребьевка учитывает число билетов (weighted draw), при этом победители уникальны.
+- `/start` поддерживает payload для участия через реферальную ссылку/формат.

@@ -62,6 +62,28 @@ function parseJoinArgs(raw: string): { contestId: string; referrerId?: string } 
   return { contestId, referrerId };
 }
 
+function parseStartJoinPayload(raw: string): { contestId: string; referrerId?: string } | null {
+  const normalized = raw.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.startsWith("join:")) {
+    const parts = normalized.split(":");
+    const contestId = (parts[1] ?? "").trim();
+    const referrerId = (parts[2] ?? "").trim();
+    if (!contestId) {
+      return null;
+    }
+    if (!referrerId) {
+      return { contestId };
+    }
+    return { contestId, referrerId };
+  }
+
+  return parseJoinArgs(normalized);
+}
+
 function toContestLine(contest: Contest): string {
   return `#${contest.id} | ${contest.title} | status=${contest.status} | participants=${contest.participants.length} | winners=${contest.maxWinners} | requiredChats=${contest.requiredChats.length}`;
 }
@@ -256,7 +278,41 @@ export function createContestBot(config: AppConfig): Bot {
     { name: "reroll", description: "Перевыбрать победителей: /reroll contest_id" },
   ]);
 
-  bot.command("start", (ctx: Ctx) => {
+  bot.command("start", async (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      return ctx.reply("Не удалось определить пользователя.");
+    }
+
+    const startPayload = typeof ctx?.startPayload === "string" ? ctx.startPayload.trim() : "";
+    const messagePayload = parseCommandArgs(extractText(ctx));
+    const payloadRaw = startPayload || messagePayload;
+
+    if (payloadRaw) {
+      const parsedPayload = parseStartJoinPayload(payloadRaw);
+      if (parsedPayload?.contestId) {
+        const result = await tryJoinContest(
+          bot,
+          config,
+          repository,
+          parsedPayload.contestId,
+          user,
+          parsedPayload.referrerId,
+        );
+        if (!result.ok) {
+          return ctx.reply(result.message);
+        }
+        if (result.already) {
+          return ctx.reply(
+            `Вы уже участвуете в конкурсе "${result.contest.title}". Участников: ${result.contest.participants.length}`,
+          );
+        }
+        return ctx.reply(
+          `Участие подтверждено через /start для "${result.contest.title}". Всего участников: ${result.contest.participants.length}`,
+        );
+      }
+    }
+
     return ctx.reply(
       [
         "MAX Contest Bot запущен.",
@@ -416,6 +472,7 @@ export function createContestBot(config: AppConfig): Bot {
       [
         `Ваш ref ID: ${user.id}`,
         `Приглашайте так: /join ${contestId} ${user.id}`,
+        `Быстрый формат через start: /start join:${contestId}:${user.id}`,
         `Бонус за реферала: +${config.referralBonusTickets} бил.`,
         `Макс бонус на пользователя: +${config.referralMaxBonusTickets} бил.`,
       ].join("\n"),
