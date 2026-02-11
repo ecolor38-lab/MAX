@@ -24,6 +24,22 @@ cp .env.example .env
 npm run dev
 ```
 
+## Как посмотреть готовый результат
+
+1. Запустите бота: `npm run dev`.
+2. В MAX откройте бота и выполните:
+   - `/start`
+   - `/newcontest ...`
+   - `/publish ...`
+   - `/draw ...`
+3. Для web-админки используйте `/adminpanel` и кнопку "Открыть панель".
+4. Для аналитики откройте подписанные endpoint’ы панели:
+   - `/export`
+   - `/audit`
+   - `/metrics`
+   - `/metrics.csv`
+   - `/alerts`
+
 ## Запуск в Docker
 
 ```bash

@@ -123,3 +123,12 @@
 - [x] Защита от злоупотреблений на путях join/referral
 - [x] README обновлён с новыми командами и примерами
 - [x] Все проверки проходят (`type-check`, `build`)
+
+## 6) Release Ready (финальный проход)
+
+- [x] Production config заполнен в локальном `.env`
+- [x] `npm run build` проходит
+- [x] `npm run test` проходит (включая smoke/integration по admin endpoints)
+- [x] Admin mini-app защищен (signed URL + TTL + rate-limit + IP allowlist)
+- [x] API-выгрузки для аналитики доступны (`/export`, `/audit`, `/metrics`, `/metrics.csv`, `/alerts`)
+- [x] Alert-digest аномалий отправляется owner/admin автоматически
