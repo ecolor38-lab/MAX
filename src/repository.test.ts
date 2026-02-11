@@ -7,6 +7,7 @@ import { ContestRepository } from "./repository";
 import type { Contest } from "./types";
 
 const TEST_STORAGE = path.join(process.cwd(), "data", "test-contests.json");
+const TEST_STORAGE_DB = path.join(process.cwd(), "data", "test-contests.db");
 
 function mkContest(id: string): Contest {
   return {
@@ -62,5 +63,23 @@ describe("ContestRepository", () => {
     const repo = new ContestRepository(TEST_STORAGE);
     const result = repo.update("missing", (c) => c);
     assert.strictEqual(result, undefined);
+  });
+
+  it("works with sqlite backend", () => {
+    if (fs.existsSync(TEST_STORAGE_DB)) fs.unlinkSync(TEST_STORAGE_DB);
+    const repo = new ContestRepository(TEST_STORAGE_DB);
+    repo.create(mkContest("c_sql_1"));
+    repo.create(mkContest("c_sql_2"));
+
+    const all = repo.list();
+    assert.strictEqual(all.length, 2);
+    assert.strictEqual(repo.get("c_sql_1")?.title, "Contest c_sql_1");
+
+    const updated = repo.addParticipant("c_sql_1", {
+      userId: "u_sql",
+      joinedAt: new Date().toISOString(),
+      tickets: 1,
+    });
+    assert.strictEqual(updated?.participants.length, 1);
   });
 });

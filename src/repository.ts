@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import type { Contest, Participant } from "./types";
 
@@ -9,14 +10,21 @@ type StorageShape = {
 
 export class ContestRepository {
   private readonly storagePath: string;
+  private readonly useSqlite: boolean;
+  private readonly db: DatabaseSync | null;
 
   constructor(storagePath: string) {
     this.storagePath = storagePath;
+    this.useSqlite = this.storagePath.endsWith(".db");
+    this.db = this.useSqlite ? new DatabaseSync(this.storagePath) : null;
     this.ensureStorage();
   }
 
   list(): Contest[] {
-    return this.read().contests;
+    if (this.useSqlite) {
+      return this.readSqlite().contests;
+    }
+    return this.readJson().contests;
   }
 
   get(contestId: string): Contest | undefined {
@@ -24,14 +32,14 @@ export class ContestRepository {
   }
 
   create(contest: Contest): Contest {
-    const data = this.read();
+    const data = this.readStorage();
     data.contests.push(contest);
-    this.write(data);
+    this.writeStorage(data);
     return contest;
   }
 
   update(contestId: string, updater: (contest: Contest) => Contest): Contest | undefined {
-    const data = this.read();
+    const data = this.readStorage();
     const idx = data.contests.findIndex((c) => c.id === contestId);
     if (idx < 0) {
       return undefined;
@@ -41,7 +49,7 @@ export class ContestRepository {
       return undefined;
     }
     data.contests[idx] = updater(current);
-    this.write(data);
+    this.writeStorage(data);
     return data.contests[idx];
   }
 
@@ -58,17 +66,81 @@ export class ContestRepository {
   private ensureStorage(): void {
     const dir = path.dirname(this.storagePath);
     fs.mkdirSync(dir, { recursive: true });
+    if (this.useSqlite) {
+      this.ensureSqliteStorage();
+      return;
+    }
+
     if (!fs.existsSync(this.storagePath)) {
-      this.write({ contests: [] });
+      this.writeJson({ contests: [] });
     }
   }
 
-  private read(): StorageShape {
+  private ensureSqliteStorage(): void {
+    const db = this.requireDb();
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS contests (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+  }
+
+  private readStorage(): StorageShape {
+    if (this.useSqlite) {
+      return this.readSqlite();
+    }
+    return this.readJson();
+  }
+
+  private writeStorage(data: StorageShape): void {
+    if (this.useSqlite) {
+      this.writeSqlite(data);
+      return;
+    }
+    this.writeJson(data);
+  }
+
+  private readJson(): StorageShape {
     const raw = fs.readFileSync(this.storagePath, "utf8");
     return JSON.parse(raw) as StorageShape;
   }
 
-  private write(data: StorageShape): void {
+  private writeJson(data: StorageShape): void {
     fs.writeFileSync(this.storagePath, JSON.stringify(data, null, 2));
+  }
+
+  private readSqlite(): StorageShape {
+    const db = this.requireDb();
+    const rows = db
+      .prepare("SELECT data FROM contests ORDER BY updated_at ASC")
+      .all() as Array<{ data: string }>;
+    const contests = rows.map((row) => JSON.parse(row.data) as Contest);
+    return { contests };
+  }
+
+  private writeSqlite(data: StorageShape): void {
+    const db = this.requireDb();
+    const now = new Date().toISOString();
+    try {
+      db.exec("BEGIN");
+      db.exec("DELETE FROM contests");
+      const stmt = db.prepare("INSERT INTO contests (id, data, updated_at) VALUES (?, ?, ?)");
+      for (const contest of data.contests) {
+        stmt.run(contest.id, JSON.stringify(contest), now);
+      }
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private requireDb(): DatabaseSync {
+    if (!this.db) {
+      throw new Error("SQLite database is not initialized.");
+    }
+    return this.db;
   }
 }

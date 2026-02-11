@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import { createContestBot } from "./bot";
 import { loadConfig } from "./config";
 

@@ -3,7 +3,7 @@ import { z } from "zod";
 const EnvSchema = z.object({
   BOT_TOKEN: z.string().min(10, "BOT_TOKEN is required"),
   ADMIN_USER_IDS: z.string().optional().default(""),
-  STORAGE_PATH: z.string().optional().default("data/contests.json"),
+  STORAGE_PATH: z.string().optional().default("data/contests.db"),
   REFERRAL_BONUS_TICKETS: z.coerce.number().int().min(0).default(1),
   REFERRAL_MAX_BONUS_TICKETS: z.coerce.number().int().min(0).default(5),
 });
