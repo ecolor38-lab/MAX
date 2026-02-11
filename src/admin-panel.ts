@@ -381,6 +381,101 @@ function buildMetricsCsv(report: ReturnType<typeof buildMetricsReport>): string 
   return ["metric,value", ...rows.map(([metric, value]) => `${toCsvValue(metric)},${toCsvValue(value)}`)].join("\n");
 }
 
+type AlertSeverity = "low" | "medium" | "high";
+type AdminAlert = {
+  code: string;
+  severity: AlertSeverity;
+  message: string;
+  value: number;
+};
+
+function buildAlertsReport(contests: Contest[]): {
+  generatedAt: string;
+  totals: { contests: number; active: number; completed: number };
+  alerts: AdminAlert[];
+} {
+  const generatedAt = new Date().toISOString();
+  const activeContests = contests.filter((contest) => contest.status === "active");
+  const completedContests = contests.filter((contest) => contest.status === "completed");
+
+  const drawActions = contests.reduce(
+    (acc, contest) => acc + (contest.auditLog?.filter((entry) => entry.action === "draw").length ?? 0),
+    0,
+  );
+  const rerollActions = contests.reduce(
+    (acc, contest) => acc + (contest.auditLog?.filter((entry) => entry.action === "reroll").length ?? 0),
+    0,
+  );
+  const pastDueActive = activeContests.filter((contest) => new Date(contest.endsAt).getTime() < Date.now()).length;
+  const maxReferralCounter = contests.reduce((acc, contest) => {
+    const contestMax = contest.participants.reduce(
+      (inner, participant) => Math.max(inner, participant.referralsCount ?? 0),
+      0,
+    );
+    return Math.max(acc, contestMax);
+  }, 0);
+  const completedWithoutParticipants = completedContests.filter(
+    (contest) => contest.participants.length === 0,
+  ).length;
+
+  const alerts: AdminAlert[] = [];
+  if (rerollActions >= 3 && rerollActions > drawActions) {
+    alerts.push({
+      code: "high_reroll_activity",
+      severity: "high",
+      value: rerollActions,
+      message: "Reroll действий больше draw. Проверьте качество условий конкурса и риск абьюза.",
+    });
+  } else if (rerollActions >= 2) {
+    alerts.push({
+      code: "elevated_reroll_activity",
+      severity: "medium",
+      value: rerollActions,
+      message: "Наблюдается повышенное число reroll.",
+    });
+  }
+
+  if (pastDueActive > 0) {
+    alerts.push({
+      code: "past_due_active_contests",
+      severity: pastDueActive > 3 ? "high" : "medium",
+      value: pastDueActive,
+      message: "Есть active конкурсы с прошедшей датой окончания. Проверьте автофиниш.",
+    });
+  }
+
+  if (maxReferralCounter >= 10) {
+    alerts.push({
+      code: "referral_outlier",
+      severity: "medium",
+      value: maxReferralCounter,
+      message: "Найден участник с очень высоким referral count. Проверьте источник трафика.",
+    });
+  }
+
+  if (completedContests.length >= 5) {
+    const pct = Math.round((completedWithoutParticipants / completedContests.length) * 100);
+    if (pct >= 40) {
+      alerts.push({
+        code: "low_completion_quality",
+        severity: "low",
+        value: pct,
+        message: "Большая доля завершенных конкурсов без участников.",
+      });
+    }
+  }
+
+  return {
+    generatedAt,
+    totals: {
+      contests: contests.length,
+      active: activeContests.length,
+      completed: completedContests.length,
+    },
+    alerts,
+  };
+}
+
 function renderPage(
   contests: Contest[],
   basePath: string,
@@ -765,7 +860,8 @@ export function createAdminPanelServer(
       pathName !== `${basePath}/export` &&
       pathName !== `${basePath}/audit` &&
       pathName !== `${basePath}/metrics` &&
-      pathName !== `${basePath}/metrics.csv`
+      pathName !== `${basePath}/metrics.csv` &&
+      pathName !== `${basePath}/alerts`
     ) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("Not found");
@@ -893,6 +989,25 @@ export function createAdminPanelServer(
       return;
     }
 
+    if (method === "GET" && pathName === `${basePath}/alerts`) {
+      const query = requestUrl.searchParams.get("q") ?? "";
+      const status = parseStatusFilter(requestUrl.searchParams.get("status"));
+      const filtered = applyContestFilters(repository.list(), query, status);
+      const report = buildAlertsReport(filtered);
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify(
+          {
+            filters: { query, status },
+            ...report,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+
     if (method === "POST" && pathName === `${basePath}/action`) {
       const body = await readPostBody(req);
       const action = body.get("action") ?? "";
@@ -939,6 +1054,7 @@ export function createAdminPanelServer(
 export const __adminPanelTestables = {
   applyContestFilters,
   buildAuditReport,
+  buildAlertsReport,
   buildMetricsCsv,
   buildMetricsReport,
   buildAdminSignature,

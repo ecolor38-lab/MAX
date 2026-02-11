@@ -247,6 +247,34 @@ describe("admin panel helpers", () => {
     assert.match(csv, /"topContestsByParticipants\.0\.id","mc1"/);
   });
 
+  it("builds alerts report", () => {
+    const contests: Contest[] = [
+      mkContest({
+        id: "a1",
+        status: "active",
+        endsAt: "2020-01-01T00:00:00.000Z",
+        participants: [],
+        auditLog: [
+          { at: "2026-01-01T00:00:00.000Z", action: "draw", actorId: "x" },
+          { at: "2026-01-01T01:00:00.000Z", action: "reroll", actorId: "x" },
+          { at: "2026-01-01T02:00:00.000Z", action: "reroll", actorId: "x" },
+          { at: "2026-01-01T03:00:00.000Z", action: "reroll", actorId: "x" },
+        ],
+      }),
+      mkContest({
+        id: "a2",
+        status: "completed",
+        participants: [{ userId: "u1", joinedAt: new Date().toISOString(), tickets: 1, referralsCount: 12 }],
+        winners: ["u1"],
+      }),
+    ];
+    const report = __adminPanelTestables.buildAlertsReport(contests);
+    assert.strictEqual(report.totals.contests, 2);
+    assert.ok(report.alerts.some((alert) => alert.code === "high_reroll_activity"));
+    assert.ok(report.alerts.some((alert) => alert.code === "past_due_active_contests"));
+    assert.ok(report.alerts.some((alert) => alert.code === "referral_outlier"));
+  });
+
   it("normalizes ip and checks allowlist", () => {
     assert.strictEqual(__adminPanelTestables.normalizeIp("::ffff:127.0.0.1"), "127.0.0.1");
     assert.strictEqual(__adminPanelTestables.normalizeIp("127.0.0.1"), "127.0.0.1");

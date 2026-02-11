@@ -30,6 +30,7 @@
 - [x] Security hardening mini-app (TTL подписи, IP allowlist, rate-limit)
 - [x] Admin metrics endpoint (`/metrics`) для продуктовой/операционной аналитики
 - [x] Metrics CSV endpoint (`/metrics.csv`) для BI/Google Sheets
+- [x] Alerts endpoint (`/alerts`) для мониторинга аномалий конкурсов
 
 ## 1) Текущий спринт
 
