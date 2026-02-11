@@ -152,3 +152,5 @@
 - [x] Добавлена команда `/status` (понятный runtime summary)
 - [x] Добавлены локальные demo-скрипты: `admin:url`, `local:e2e`
 - [x] Добавлен one-command tunnel flow для публичной админки в MAX: `npm run tunnel:up`
+- [x] Добавлены команды для онбординга школьного уровня: `/guide`, `/faq`, `/posttemplate`
+- [x] Добавлен документ юнит-экономики: `UNIT_ECONOMICS.md`

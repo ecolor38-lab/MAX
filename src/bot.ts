@@ -240,8 +240,16 @@ function buildHelpKeyboard(locale: SupportedLocale, canManage: boolean): ReturnT
   const L = locale === "en";
   const rows = [
     [
+      Keyboard.button.callback(L ? "Beginner guide" : "Инструкция для новичка", "help:guide_user"),
+      Keyboard.button.callback(L ? "Admin guide" : "Инструкция для админа", "help:guide_admin"),
+    ],
+    [
       Keyboard.button.callback(L ? "What next" : "Что дальше", "help:nextsteps"),
       Keyboard.button.callback(L ? "Templates" : "Шаблоны", "help:templates"),
+    ],
+    [
+      Keyboard.button.callback(L ? "FAQ" : "FAQ", "help:faq"),
+      Keyboard.button.callback(L ? "Post template" : "Шаблон поста", "help:post_template"),
     ],
     [
       Keyboard.button.callback(L ? "Who am I" : "Кто я", "help:whoami"),
@@ -340,6 +348,98 @@ function buildStatusMessage(input: {
     `Конкурсы: всего=${input.contestsTotal}, active=${input.activeCount}, completed=${input.completedCount}, draft=${input.draftCount}`,
     panelLine,
     "Следующий шаг: /help -> Что дальше",
+  ].join("\n");
+}
+
+function buildSchoolUserGuideMessage(locale: SupportedLocale): string {
+  if (locale === "en") {
+    return [
+      "Beginner guide (very simple):",
+      "1) Press Join button under contest post OR send /join contest_id.",
+      "2) Wait for draw time.",
+      "3) Check winners in chat.",
+      "4) Verify fairness using /proof contest_id.",
+      "Rule: one real account per person.",
+    ].join("\n");
+  }
+  return [
+    "Инструкция для новичка (очень просто):",
+    "1) Нажми кнопку 'Участвовать' под постом конкурса или напиши /join contest_id.",
+    "2) Дождись времени розыгрыша.",
+    "3) Смотри победителей в чате.",
+    "4) Проверь честность через /proof contest_id.",
+    "Правило: один реальный аккаунт на человека.",
+  ].join("\n");
+}
+
+function buildAdminIntegrationGuideMessage(locale: SupportedLocale): string {
+  if (locale === "en") {
+    return [
+      "Admin guide: how to integrate into groups/channels",
+      "1) Add bot to your group/channel and grant needed rights.",
+      "2) Create contest: /newcontest Name | 2026-12-31T20:00:00Z | 1",
+      "3) (Optional) Required chats: /setrequired contest_id chat1,chat2",
+      "4) Publish post: /publish contest_id chat_id [post text]",
+      "5) Run draw: /draw contest_id",
+      "6) Open web admin: /adminpanel",
+    ].join("\n");
+  }
+  return [
+    "Инструкция для админа: интеграция в группы/каналы",
+    "1) Добавь бота в группу/канал и выдай нужные права.",
+    "2) Создай конкурс: /newcontest Название | 2026-12-31T20:00:00Z | 1",
+    "3) (Опционально) обязательные чаты: /setrequired contest_id chat1,chat2",
+    "4) Опубликуй пост: /publish contest_id chat_id [текст]",
+    "5) Проведи розыгрыш: /draw contest_id",
+    "6) Открой web-админку: /adminpanel",
+  ].join("\n");
+}
+
+function buildFaqMessage(locale: SupportedLocale): string {
+  if (locale === "en") {
+    return [
+      "FAQ:",
+      "Q: How to join?",
+      "A: Press Join button or /join contest_id.",
+      "Q: Why join failed?",
+      "A: Usually missing required chats or contest already closed.",
+      "Q: How to check fairness?",
+      "A: Use /proof contest_id.",
+      "Q: Who can run draw?",
+      "A: owner/admin/moderator (by role config).",
+    ].join("\n");
+  }
+  return [
+    "FAQ (вопросы-ответы):",
+    "В: Как участвовать?",
+    "О: Нажми кнопку 'Участвовать' или /join contest_id.",
+    "В: Почему не пускает в конкурс?",
+    "О: Обычно не выполнены обязательные чаты или конкурс уже завершен.",
+    "В: Как проверить честность?",
+    "О: Используй /proof contest_id.",
+    "В: Кто может делать draw?",
+    "О: owner/admin/moderator (по ролям в конфиге).",
+  ].join("\n");
+}
+
+function buildPostTemplateMessage(locale: SupportedLocale): string {
+  if (locale === "en") {
+    return [
+      "Ready-to-use contest post template:",
+      "🎁 Giveaway: <Prize>",
+      "✅ How to participate: press Join button",
+      "🕒 Draw time: <Date/Time>",
+      "🔍 Fairness: /proof contest_id after draw",
+      "👥 One account per person",
+    ].join("\n");
+  }
+  return [
+    "Готовый шаблон поста для розыгрыша:",
+    "🎁 Разыгрываем: <Приз>",
+    "✅ Как участвовать: нажмите кнопку 'Участвовать'",
+    "🕒 Время розыгрыша: <Дата/время>",
+    "🔍 Проверка честности: /proof contest_id после draw",
+    "👥 Один аккаунт на человека",
   ].join("\n");
 }
 
@@ -759,7 +859,10 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
   bot.api.setMyCommands([
     { name: "start", description: "Помощь и команды" },
+    { name: "guide", description: "Инструкция для новичков и админов" },
     { name: "help", description: "Онбординг и полный список команд" },
+    { name: "faq", description: "Вопросы и ответы по боту" },
+    { name: "posttemplate", description: "Готовый шаблон поста розыгрыша" },
     { name: "status", description: "Текущий статус бота и админки" },
     { name: "myrole", description: "Показать роль: /myrole" },
     { name: "adminpanel", description: "Открыть админ-панель: /adminpanel" },
@@ -820,7 +923,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
       }
     }
 
-    return ctx.reply([msg("startTitle"), "", buildHelpMessage(config.defaultLocale)].join("\n"), {
+    return ctx.reply([msg("startTitle"), "👉 Сначала открой: /guide", "", buildHelpMessage(config.defaultLocale)].join("\n"), {
       attachments: [buildHelpKeyboard(config.defaultLocale, canManageContest(config, user.id))],
     });
   });
@@ -831,6 +934,27 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     return ctx.reply(buildHelpMessage(config.defaultLocale), {
       attachments: [buildHelpKeyboard(config.defaultLocale, canManage)],
     });
+  });
+
+  bot.command("guide", (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    const canManage = user ? canManageContest(config, user.id) : false;
+    return ctx.reply(
+      [buildSchoolUserGuideMessage(config.defaultLocale), "", buildAdminIntegrationGuideMessage(config.defaultLocale)].join(
+        "\n",
+      ),
+      {
+        attachments: [buildHelpKeyboard(config.defaultLocale, canManage)],
+      },
+    );
+  });
+
+  bot.command("faq", (ctx: Ctx) => {
+    return ctx.reply(buildFaqMessage(config.defaultLocale));
+  });
+
+  bot.command("posttemplate", (ctx: Ctx) => {
+    return ctx.reply(buildPostTemplateMessage(config.defaultLocale));
   });
 
   bot.command("status", (ctx: Ctx) => {
@@ -1425,6 +1549,26 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
       await ctx.reply(buildCommandTemplates(config.defaultLocale));
       return;
     }
+    if (action === "guide_user") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(buildSchoolUserGuideMessage(config.defaultLocale));
+      return;
+    }
+    if (action === "guide_admin") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(buildAdminIntegrationGuideMessage(config.defaultLocale));
+      return;
+    }
+    if (action === "faq") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(buildFaqMessage(config.defaultLocale));
+      return;
+    }
+    if (action === "post_template") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(buildPostTemplateMessage(config.defaultLocale));
+      return;
+    }
     if (action === "nextsteps") {
       await ctx.answerOnCallback({ notification: "OK" });
       await ctx.reply(buildNextStepsMessage(config.defaultLocale));
@@ -1617,6 +1761,10 @@ export const __testables = {
   canUseLinkButtonUrl,
   describeAdminPanelMode,
   buildStatusMessage,
+  buildSchoolUserGuideMessage,
+  buildAdminIntegrationGuideMessage,
+  buildFaqMessage,
+  buildPostTemplateMessage,
   buildAlertDigestSignature,
   formatAlertDigestMessage,
   buildAdminPanelUrl,

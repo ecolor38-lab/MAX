@@ -124,6 +124,10 @@ docker compose logs -f
 /contestaudit contest_id
 /adminpanel
 /help
+/guide
+/faq
+/posttemplate
+/status
 ```
 
 - `editcontest` меняет параметры существующего конкурса.
@@ -132,6 +136,10 @@ docker compose logs -f
 - `contestaudit` показывает последние записи журнала действий по конкурсу.
 - `adminpanel` открывает ссылку на мини-админку (только owner/admin) с подписью `uid/ts/sig`.
 - `help` показывает структурированный onboarding по командам и быстрому старту.
+- `guide` — ультра-простая инструкция “для новичков” + блок для админов.
+- `faq` — частые вопросы/ответы пользователей.
+- `posttemplate` — готовый шаблон поста для розыгрыша.
+- `status` — текущий runtime-статус бота/админки.
 - В `/start` и `/help` есть интерактивные inline-кнопки:
   - быстрые действия (`Что дальше`, `Кто я`, `Моя роль`, `Конкурсы`);
   - шаблоны команд;
@@ -154,6 +162,7 @@ docker compose logs -f
 - Админка: web mini-app с фильтрами, bulk-действиями, отчетами и метриками.
 - Мониторинг: `/health`, alerts, alert-digest, structured logs.
 - UX-онбординг: `/start`, `/help`, `/status` + интерактивные кнопки.
+- Коммерческая модель и прогноз: `UNIT_ECONOMICS.md`.
 
 ### Механика админки в MAX (важно)
 

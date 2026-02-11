@@ -169,6 +169,10 @@ describe("bot testable helpers", () => {
   it("builds interactive help keyboard and templates", () => {
     const keyboard = __testables.buildHelpKeyboard("ru", true);
     const buttons = keyboard.payload.buttons.flat();
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:guide_user"));
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:guide_admin"));
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:faq"));
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:post_template"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:nextsteps"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:whoami"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:adminpanel"));
@@ -180,6 +184,20 @@ describe("bot testable helpers", () => {
     const steps = __testables.buildNextStepsMessage("ru");
     assert.match(steps, /Что делать дальше/);
     assert.match(steps, /\/draw contest_id/);
+
+    const userGuide = __testables.buildSchoolUserGuideMessage("ru");
+    assert.match(userGuide, /Инструкция для новичка/);
+    assert.match(userGuide, /\/join contest_id/);
+
+    const adminGuide = __testables.buildAdminIntegrationGuideMessage("ru");
+    assert.match(adminGuide, /Инструкция для админа/);
+    assert.match(adminGuide, /\/newcontest/);
+
+    const faq = __testables.buildFaqMessage("ru");
+    assert.match(faq, /FAQ/);
+
+    const postTemplate = __testables.buildPostTemplateMessage("ru");
+    assert.match(postTemplate, /Готовый шаблон поста/);
   });
 
   it("validates link button urls for MAX constraints", () => {
