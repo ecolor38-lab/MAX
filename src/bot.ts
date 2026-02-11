@@ -10,6 +10,9 @@ import type { Contest, Participant } from "./types";
 type Ctx = any;
 const COMMAND_COOLDOWN_MS = 1500;
 const DRAW_LOCK_TTL_MS = 10_000;
+const SUSPICIOUS_WINDOW_MS = 5 * 60 * 1000;
+const SUSPICIOUS_THRESHOLD = 3;
+const SUSPICIOUS_ALERT_COOLDOWN_MS = 5 * 60 * 1000;
 
 function extractUser(ctx: Ctx): { id: string; username?: string } | null {
   const user = ctx?.user?.();
@@ -86,6 +89,38 @@ function parseStartJoinPayload(raw: string): { contestId: string; referrerId?: s
   return parseJoinArgs(normalized);
 }
 
+function parseEditContestArgs(raw: string): {
+  contestId: string;
+  title?: string;
+  endsAt?: string;
+  maxWinners?: number;
+} | null {
+  const [contestIdRaw, titleRaw, endsAtRaw, winnersRaw] = raw.split("|").map((value) => value.trim());
+  const contestId = contestIdRaw ?? "";
+  if (!contestId) {
+    return null;
+  }
+
+  const title = titleRaw && titleRaw !== "-" ? titleRaw : undefined;
+  const endsAt = endsAtRaw && endsAtRaw !== "-" ? endsAtRaw : undefined;
+
+  let maxWinners: number | undefined;
+  if (winnersRaw && winnersRaw !== "-") {
+    const parsed = Number(winnersRaw);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      return null;
+    }
+    maxWinners = Math.floor(parsed);
+  }
+
+  return {
+    contestId,
+    ...(title ? { title } : {}),
+    ...(endsAt ? { endsAt } : {}),
+    ...(maxWinners ? { maxWinners } : {}),
+  };
+}
+
 function toContestLine(contest: Contest): string {
   return `#${contest.id} | ${contest.title} | status=${contest.status} | participants=${contest.participants.length} | winners=${contest.maxWinners} | requiredChats=${contest.requiredChats.length}`;
 }
@@ -105,6 +140,63 @@ function hitCooldown(
   }
   state.set(key, now + cooldownMs);
   return { ok: true };
+}
+
+function hitSuspiciousCounter(
+  state: Map<string, { count: number; windowStart: number; lastAlertAt: number }>,
+  key: string,
+): { shouldAlert: boolean; count: number } {
+  const now = Date.now();
+  const current = state.get(key);
+  if (!current || now - current.windowStart > SUSPICIOUS_WINDOW_MS) {
+    state.set(key, { count: 1, windowStart: now, lastAlertAt: 0 });
+    return { shouldAlert: false, count: 1 };
+  }
+
+  const next = { ...current, count: current.count + 1 };
+  state.set(key, next);
+  const shouldAlert =
+    next.count >= SUSPICIOUS_THRESHOLD && now - next.lastAlertAt > SUSPICIOUS_ALERT_COOLDOWN_MS;
+  if (shouldAlert) {
+    state.set(key, { ...next, lastAlertAt: now });
+  }
+  return { shouldAlert, count: next.count };
+}
+
+async function notifyAdmins(bot: Bot, config: AppConfig, message: string): Promise<void> {
+  const adminIds = [...config.adminUserIds].map((value) => Number(value)).filter((v) => Number.isFinite(v));
+  if (adminIds.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    adminIds.map(async (adminId) => {
+      try {
+        await bot.api.sendMessageToUser(adminId, message);
+      } catch {
+        // Ignore admin notification delivery failures.
+      }
+    }),
+  );
+}
+
+function notifySuspiciousIfNeeded(
+  bot: Bot,
+  config: AppConfig,
+  suspiciousState: Map<string, { count: number; windowStart: number; lastAlertAt: number }>,
+  reason: string,
+  userId: string,
+): void {
+  const signal = hitSuspiciousCounter(suspiciousState, `${reason}:${userId}`);
+  if (!signal.shouldAlert) {
+    return;
+  }
+
+  void notifyAdmins(
+    bot,
+    config,
+    `Антифрод сигнал: ${reason}\nuser_id=${userId}\nповторов за окно=${signal.count}`,
+  );
 }
 
 async function findMissingRequiredChats(
@@ -282,6 +374,7 @@ export function createContestBot(config: AppConfig): Bot {
   const bot = new Bot(config.botToken);
   const commandCooldowns = new Map<string, number>();
   const drawLocks = new Map<string, number>();
+  const suspiciousActivity = new Map<string, { count: number; windowStart: number; lastAlertAt: number }>();
 
   bot.api.setMyCommands([
     { name: "start", description: "Помощь и команды" },
@@ -294,6 +387,12 @@ export function createContestBot(config: AppConfig): Bot {
     { name: "setrequired", description: "Обязательные чаты: /setrequired contest_id chat1,chat2" },
     { name: "myref", description: "Рефкод: /myref contest_id" },
     { name: "join", description: "Участвовать: /join contest_id" },
+    {
+      name: "editcontest",
+      description: "Изменить конкурс: /editcontest id | title|- | endsAt|- | winners|-",
+    },
+    { name: "closecontest", description: "Закрыть конкурс: /closecontest contest_id" },
+    { name: "reopencontest", description: "Переоткрыть: /reopencontest contest_id ISO_endsAt" },
     { name: "publish", description: "Опубликовать конкурс: /publish contest_id chat_id [текст]" },
     { name: "draw", description: "Выбрать победителей: /draw contest_id" },
     { name: "reroll", description: "Перевыбрать победителей: /reroll contest_id" },
@@ -345,6 +444,9 @@ export function createContestBot(config: AppConfig): Bot {
         "/setrequired contest_id chat_id[,chat_id2,...]",
         "/myref contest_id",
         "/join contest_id [referrer_user_id]",
+        "/editcontest contest_id | title|- | endsAt|- | winners|-",
+        "/closecontest contest_id",
+        "/reopencontest contest_id ISO-дата",
         "/publish contest_id chat_id [текст_поста]",
         "/draw contest_id (только админ)",
         "/reroll contest_id (только админ)",
@@ -370,6 +472,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const cooldown = hitCooldown(commandCooldowns, `newcontest:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
+      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "newcontest_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
     }
 
@@ -427,6 +530,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const cooldown = hitCooldown(commandCooldowns, `setrequired:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
+      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "setrequired_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
     }
 
@@ -463,6 +567,7 @@ export function createContestBot(config: AppConfig): Bot {
 
     const cooldown = hitCooldown(commandCooldowns, `join:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
+      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "join_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
     }
 
@@ -484,6 +589,157 @@ export function createContestBot(config: AppConfig): Bot {
     return ctx.reply(
       `Вы участвуете в конкурсе "${result.contest.title}". Всего участников: ${result.contest.participants.length}`,
     );
+  });
+
+  bot.command("editcontest", (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      return ctx.reply("Не удалось определить пользователя.");
+    }
+    if (!isAdmin(config, user.id)) {
+      return ctx.reply("Эта команда доступна только администраторам.");
+    }
+    const cooldown = hitCooldown(commandCooldowns, `editcontest:${user.id}`, COMMAND_COOLDOWN_MS);
+    if (!cooldown.ok) {
+      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "editcontest_cooldown", user.id);
+      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
+    }
+
+    const parsed = parseEditContestArgs(parseCommandArgs(extractText(ctx)));
+    if (!parsed) {
+      return ctx.reply("Формат: /editcontest contest_id | title|- | endsAt|- | winners|-");
+    }
+
+    const updated = repository.update(parsed.contestId, (contest) => {
+      let nextEndsAt = contest.endsAt;
+      if (parsed.endsAt) {
+        const date = new Date(parsed.endsAt);
+        if (!Number.isNaN(date.getTime())) {
+          nextEndsAt = date.toISOString();
+        }
+      }
+
+      return {
+        ...contest,
+        ...(parsed.title ? { title: parsed.title } : {}),
+        ...(parsed.maxWinners ? { maxWinners: parsed.maxWinners } : {}),
+        endsAt: nextEndsAt,
+      };
+    });
+    if (!updated) {
+      return ctx.reply("Конкурс не найден.");
+    }
+
+    if (parsed.endsAt) {
+      const date = new Date(parsed.endsAt);
+      if (Number.isNaN(date.getTime())) {
+        return ctx.reply("Конкурс обновлен, но endsAt проигнорирован: передана некорректная дата.");
+      }
+    }
+
+    return ctx.reply(
+      `Конкурс обновлен: ${updated.title}\nID: ${updated.id}\nendsAt: ${updated.endsAt}\nmaxWinners: ${updated.maxWinners}`,
+    );
+  });
+
+  bot.command("closecontest", async (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      return ctx.reply("Не удалось определить пользователя.");
+    }
+    if (!isAdmin(config, user.id)) {
+      return ctx.reply("Эта команда доступна только администраторам.");
+    }
+    const cooldown = hitCooldown(commandCooldowns, `closecontest:${user.id}`, COMMAND_COOLDOWN_MS);
+    if (!cooldown.ok) {
+      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "closecontest_cooldown", user.id);
+      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
+    }
+
+    const contestId = parseCommandArgs(extractText(ctx));
+    if (!contestId) {
+      return ctx.reply("Формат: /closecontest contest_id");
+    }
+
+    const contest = repository.get(contestId);
+    if (!contest) {
+      return ctx.reply("Конкурс не найден.");
+    }
+    if (contest.status === "completed") {
+      return ctx.reply("Конкурс уже завершен.");
+    }
+
+    let updated: Contest | undefined;
+    if (contest.participants.length === 0) {
+      updated = repository.update(contest.id, (prev) => ({ ...prev, status: "completed" }));
+    } else {
+      const result = runDeterministicDraw(contest);
+      updated = repository.update(contest.id, (prev) => ({
+        ...prev,
+        status: "completed",
+        winners: result.winners,
+        drawSeed: result.seed,
+      }));
+    }
+
+    if (!updated) {
+      return ctx.reply("Не удалось закрыть конкурс.");
+    }
+
+    await publishContestResults(bot, updated);
+    return ctx.reply(
+      `Конкурс принудительно закрыт: ${updated.title}\nПобедители: ${updated.winners.join(", ") || "нет"}`,
+    );
+  });
+
+  bot.command("reopencontest", (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      return ctx.reply("Не удалось определить пользователя.");
+    }
+    if (!isAdmin(config, user.id)) {
+      return ctx.reply("Эта команда доступна только администраторам.");
+    }
+    const cooldown = hitCooldown(commandCooldowns, `reopencontest:${user.id}`, COMMAND_COOLDOWN_MS);
+    if (!cooldown.ok) {
+      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "reopencontest_cooldown", user.id);
+      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
+    }
+
+    const args = parseCommandArgs(extractText(ctx)).split(" ").filter(Boolean);
+    const contestId = args[0];
+    const endsAtRaw = args[1];
+    if (!contestId || !endsAtRaw) {
+      return ctx.reply("Формат: /reopencontest contest_id ISO_endsAt");
+    }
+
+    const parsedDate = new Date(endsAtRaw);
+    if (Number.isNaN(parsedDate.getTime()) || parsedDate.getTime() <= Date.now()) {
+      return ctx.reply("Укажите корректную будущую ISO-дату.");
+    }
+
+    const contest = repository.get(contestId);
+    if (!contest) {
+      return ctx.reply("Конкурс не найден.");
+    }
+    if (contest.status !== "completed") {
+      return ctx.reply("Переоткрыть можно только завершенный конкурс.");
+    }
+
+    const updated = repository.update(contestId, (prev) => {
+      const { drawSeed: _dropDrawSeed, ...withoutDrawSeed } = prev;
+      return {
+        ...withoutDrawSeed,
+        status: "active",
+        endsAt: parsedDate.toISOString(),
+        winners: [],
+      };
+    });
+    if (!updated) {
+      return ctx.reply("Не удалось переоткрыть конкурс.");
+    }
+
+    return ctx.reply(`Конкурс переоткрыт: ${updated.title}\nНовая дата: ${updated.endsAt}`);
   });
 
   bot.command("myref", (ctx: Ctx) => {
@@ -523,6 +779,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const cooldown = hitCooldown(commandCooldowns, `publish:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
+      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "publish_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
     }
 
@@ -577,6 +834,7 @@ export function createContestBot(config: AppConfig): Bot {
 
     const cooldown = hitCooldown(commandCooldowns, `join_callback:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
+      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "join_callback_cooldown", user.id);
       await ctx.answerOnCallback({
         notification: `Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`,
       });
@@ -613,6 +871,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const userCooldown = hitCooldown(commandCooldowns, `draw:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!userCooldown.ok) {
+      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "draw_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${userCooldown.waitSeconds} сек.`);
     }
 
@@ -633,6 +892,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const lock = hitCooldown(drawLocks, `draw:${contest.id}`, DRAW_LOCK_TTL_MS);
     if (!lock.ok) {
+      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "draw_lock", user.id);
       return ctx.reply(`Жеребьевка уже выполняется. Повторите через ${lock.waitSeconds} сек.`);
     }
 
@@ -669,6 +929,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const userCooldown = hitCooldown(commandCooldowns, `reroll:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!userCooldown.ok) {
+      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "reroll_cooldown", user.id);
       return ctx.reply(`Слишком часто. Повторите через ${userCooldown.waitSeconds} сек.`);
     }
 
@@ -689,6 +950,7 @@ export function createContestBot(config: AppConfig): Bot {
     }
     const lock = hitCooldown(drawLocks, `reroll:${contest.id}`, DRAW_LOCK_TTL_MS);
     if (!lock.ok) {
+      notifySuspiciousIfNeeded(bot, config, suspiciousActivity, "reroll_lock", user.id);
       return ctx.reply(`Reroll уже выполняется. Повторите через ${lock.waitSeconds} сек.`);
     }
 
