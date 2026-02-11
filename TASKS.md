@@ -151,3 +151,4 @@
 - [x] Добавлены пошаговые подсказки `Что дальше` + понятная диагностика по `ADMIN_PANEL_URL` (локальный URL vs публичный)
 - [x] Добавлена команда `/status` (понятный runtime summary)
 - [x] Добавлены локальные demo-скрипты: `admin:url`, `local:e2e`
+- [x] Добавлен one-command tunnel flow для публичной админки в MAX: `npm run tunnel:up`

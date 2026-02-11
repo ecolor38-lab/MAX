@@ -11,7 +11,8 @@
     "test": "npm run build && node --test dist/*.test.js",
     "smoke": "bash scripts/smoke.sh",
     "admin:url": "bash scripts/admin-url.sh",
-    "local:e2e": "bash scripts/local-e2e.sh"
+    "local:e2e": "bash scripts/local-e2e.sh",
+    "tunnel:up": "bash scripts/tunnel-up.sh"
   },
   "keywords": [],
   "author": "",

@@ -42,6 +42,18 @@ npm run local:e2e
 npm run admin:url
 ```
 
+Поднять публичный URL админки в 1 команду (ngrok):
+
+```bash
+npm run tunnel:up
+```
+
+Перед этим добавьте в `.env`:
+
+```bash
+NGROK_AUTHTOKEN=your_token
+```
+
 ## Как посмотреть готовый результат
 
 1. Запустите бота: `npm run dev`.
@@ -142,6 +154,13 @@ docker compose logs -f
 - Админка: web mini-app с фильтрами, bulk-действиями, отчетами и метриками.
 - Мониторинг: `/health`, alerts, alert-digest, structured logs.
 - UX-онбординг: `/start`, `/help`, `/status` + интерактивные кнопки.
+
+### Механика админки в MAX (важно)
+
+- Кнопка в MAX открывает только публичный URL (`https`).
+- Если `ADMIN_PANEL_URL` локальный (`localhost`), бот честно пишет, что кнопка не откроется.
+- Локальный браузерный тест всё равно доступен через `npm run admin:url`.
+- Для теста “как в проде” поднимайте tunnel: `npm run tunnel:up`.
 
 ### Web mini-app админка (встроенная)
 
