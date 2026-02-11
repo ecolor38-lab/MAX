@@ -26,6 +26,7 @@
 - [x] Продвинутый UX v1 (фильтры, поиск, формы create/edit, метрики)
 - [x] Продвинутый UX v2 (пагинация, массовые действия, экспорт, графики)
 - [x] Admin API отчеты (export CSV + audit JSON)
+- [x] Smoke/integration тесты mini-app endpoint’ов (`/health`, `/audit`, `/export`)
 
 ## 1) Текущий спринт
 

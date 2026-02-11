@@ -89,6 +89,7 @@ docker compose logs -f
 - API-эндпоинты панели:
   - `${ADMIN_PANEL_URL}/export` — CSV отчет по фильтрам (`q`, `status`).
   - `${ADMIN_PANEL_URL}/audit` — JSON сводка аудита по фильтрам (`q`, `status`).
+- В проекте есть smoke/integration тесты для endpoint’ов панели (`/health`, `/audit`, `/export`).
 
 ## Роли и доступы
 
