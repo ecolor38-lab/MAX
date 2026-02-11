@@ -240,13 +240,14 @@ function buildHelpKeyboard(locale: SupportedLocale, canManage: boolean): ReturnT
   const L = locale === "en";
   const rows = [
     [
+      Keyboard.button.callback(L ? "What next" : "Что дальше", "help:nextsteps"),
+      Keyboard.button.callback(L ? "Templates" : "Шаблоны", "help:templates"),
+    ],
+    [
       Keyboard.button.callback(L ? "Who am I" : "Кто я", "help:whoami"),
       Keyboard.button.callback(L ? "My role" : "Моя роль", "help:myrole"),
     ],
-    [
-      Keyboard.button.callback(L ? "Contests" : "Конкурсы", "help:contests"),
-      Keyboard.button.callback(L ? "Templates" : "Шаблоны", "help:templates"),
-    ],
+    [Keyboard.button.callback(L ? "Contests" : "Конкурсы", "help:contests")],
   ];
   if (canManage) {
     rows.push(
@@ -260,6 +261,56 @@ function buildHelpKeyboard(locale: SupportedLocale, canManage: boolean): ReturnT
     );
   }
   return Keyboard.inlineKeyboard(rows);
+}
+
+function buildNextStepsMessage(locale: SupportedLocale): string {
+  if (locale === "en") {
+    return [
+      "Next steps:",
+      "1) Press Templates and copy /newcontest example.",
+      "2) Create contest via /newcontest ...",
+      "3) Check contest id in /contests.",
+      "4) Publish via /publish contest_id chat_id [text].",
+      "5) Run /draw contest_id when ready.",
+    ].join("\n");
+  }
+  return [
+    "Что делать дальше:",
+    "1) Нажмите 'Шаблоны' и скопируйте пример /newcontest.",
+    "2) Создайте конкурс: /newcontest ...",
+    "3) Посмотрите contest_id через /contests.",
+    "4) Опубликуйте: /publish contest_id chat_id [текст].",
+    "5) Проведите розыгрыш: /draw contest_id.",
+  ].join("\n");
+}
+
+function isPrivateOrLocalHost(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase();
+  if (!host || host === "localhost" || host === "127.0.0.1" || host === "::1") {
+    return true;
+  }
+  if (host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("127.")) {
+    return true;
+  }
+  if (host.startsWith("172.")) {
+    const second = Number(host.split(".")[1] ?? "");
+    if (Number.isFinite(second) && second >= 16 && second <= 31) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function canUseLinkButtonUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return false;
+    }
+    return !isPrivateOrLocalHost(parsed.hostname);
+  } catch {
+    return false;
+  }
 }
 
 function withAuditEntry(contest: Contest, entry: ContestAuditEntry): Contest {
@@ -634,6 +685,47 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   const alertDigestState = { lastSignature: "", lastSentAt: 0 };
   const msg = (key: Parameters<typeof t>[1], vars?: Record<string, string | number>) =>
     t(config.defaultLocale, key, vars);
+  const sendAdminPanelEntry = async (ctx: Ctx, userId: string): Promise<void> => {
+    if (!config.adminPanelUrl) {
+      await ctx.reply("Админ-панель не настроена: задайте ADMIN_PANEL_URL в .env.");
+      return;
+    }
+    const secret = config.adminPanelSecret || config.botToken;
+    const url = buildAdminPanelUrl(config.adminPanelUrl, userId, secret);
+
+    if (!canUseLinkButtonUrl(config.adminPanelUrl)) {
+      await ctx.reply(
+        [
+          "Открыть админку кнопкой не получится: сейчас указан локальный/private URL.",
+          `Текущее значение ADMIN_PANEL_URL: ${config.adminPanelUrl}`,
+          "Нужен публичный URL (https) через tunnel/домен (например Cloudflare Tunnel или ngrok).",
+          "После этого кнопка 'Открыть панель' заработает.",
+          "",
+          `Временная ссылка (для проверки): ${url}`,
+        ].join("\n"),
+      );
+      return;
+    }
+
+    try {
+      await ctx.reply("Открыть админ-панель:", {
+        attachments: [Keyboard.inlineKeyboard([[Keyboard.button.link("Открыть панель", url)]])],
+      });
+    } catch (error) {
+      logger.warn("admin_panel_link_button_failed", { message: error instanceof Error ? error.message : String(error) });
+      await ctx.reply(
+        [
+          "Не удалось отправить кнопку-ссылку админки.",
+          "Отправляю прямую ссылку текстом:",
+          url,
+        ].join("\n"),
+      );
+    }
+  };
+
+  bot.catch((error: unknown, _ctx: Ctx) => {
+    logger.error("bot_handler_error", { message: error instanceof Error ? error.message : String(error) });
+  });
 
   bot.api.setMyCommands([
     { name: "start", description: "Помощь и команды" },
@@ -726,7 +818,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     return ctx.reply(msg("myRole", { role: getUserRole(config, user.id) }));
   });
 
-  bot.command("adminpanel", (ctx: Ctx) => {
+  bot.command("adminpanel", async (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
       return ctx.reply(msg("userNotDetected"));
@@ -734,14 +826,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     if (!canManageContest(config, user.id)) {
       return ctx.reply(msg("adminOnly"));
     }
-    if (!config.adminPanelUrl) {
-      return ctx.reply("Админ-панель не настроена: задайте ADMIN_PANEL_URL в .env.");
-    }
-    const secret = config.adminPanelSecret || config.botToken;
-    const url = buildAdminPanelUrl(config.adminPanelUrl, user.id, secret);
-    return ctx.reply("Открыть админ-панель:", {
-      attachments: [Keyboard.inlineKeyboard([[Keyboard.button.link("Открыть панель", url)]])],
-    });
+    await sendAdminPanelEntry(ctx, user.id);
   });
 
   bot.command("newcontest", (ctx: Ctx) => {
@@ -1287,21 +1372,18 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
       await ctx.reply(buildCommandTemplates(config.defaultLocale));
       return;
     }
+    if (action === "nextsteps") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(buildNextStepsMessage(config.defaultLocale));
+      return;
+    }
     if (action === "adminpanel") {
       if (!canManageContest(config, user.id)) {
         await ctx.answerOnCallback({ notification: msg("adminOnly") });
         return;
       }
-      if (!config.adminPanelUrl) {
-        await ctx.answerOnCallback({ notification: "Админ-панель не настроена." });
-        return;
-      }
-      const secret = config.adminPanelSecret || config.botToken;
-      const url = buildAdminPanelUrl(config.adminPanelUrl, user.id, secret);
       await ctx.answerOnCallback({ notification: "Открываю админку..." });
-      await ctx.reply("Открыть админ-панель:", {
-        attachments: [Keyboard.inlineKeyboard([[Keyboard.button.link("Открыть панель", url)]])],
-      });
+      await sendAdminPanelEntry(ctx, user.id);
       return;
     }
     if (action === "draw_hint") {
@@ -1478,6 +1560,8 @@ export const __testables = {
   buildHelpMessage,
   buildHelpKeyboard,
   buildCommandTemplates,
+  buildNextStepsMessage,
+  canUseLinkButtonUrl,
   buildAlertDigestSignature,
   formatAlertDigestMessage,
   buildAdminPanelUrl,

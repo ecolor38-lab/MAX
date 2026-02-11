@@ -169,12 +169,22 @@ describe("bot testable helpers", () => {
   it("builds interactive help keyboard and templates", () => {
     const keyboard = __testables.buildHelpKeyboard("ru", true);
     const buttons = keyboard.payload.buttons.flat();
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:nextsteps"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:whoami"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:adminpanel"));
 
     const templates = __testables.buildCommandTemplates("ru");
     assert.match(templates, /Шаблоны команд/);
     assert.match(templates, /\/publish contest_id chat_id/);
+
+    const steps = __testables.buildNextStepsMessage("ru");
+    assert.match(steps, /Что делать дальше/);
+    assert.match(steps, /\/draw contest_id/);
+  });
+
+  it("validates link button urls for MAX constraints", () => {
+    assert.strictEqual(__testables.canUseLinkButtonUrl("http://localhost:8787/adminpanel"), false);
+    assert.strictEqual(__testables.canUseLinkButtonUrl("https://example.com/adminpanel"), true);
   });
 });
 
