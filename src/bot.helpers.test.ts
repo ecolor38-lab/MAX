@@ -173,6 +173,7 @@ describe("bot testable helpers", () => {
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:guide_admin"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:faq"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:post_template"));
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "wizard:start"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:nextsteps"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:whoami"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:adminpanel"));
@@ -186,8 +187,8 @@ describe("bot testable helpers", () => {
     assert.match(steps, /\/draw contest_id/);
 
     const userGuide = __testables.buildSchoolUserGuideMessage("ru");
-    assert.match(userGuide, /Инструкция для новичка/);
-    assert.match(userGuide, /\/join contest_id/);
+    assert.match(userGuide, /Инструкция для школьника/);
+    assert.match(userGuide, /\/faq/);
 
     const adminGuide = __testables.buildAdminIntegrationGuideMessage("ru");
     assert.match(adminGuide, /Инструкция для админа/);
@@ -198,6 +199,13 @@ describe("bot testable helpers", () => {
 
     const postTemplate = __testables.buildPostTemplateMessage("ru");
     assert.match(postTemplate, /Готовый шаблон поста/);
+
+    const wizardText = __testables.buildWizardIntroMessage("ru");
+    assert.match(wizardText, /Мастер-сценарий/);
+    const wizardKeyboard = __testables.buildWizardKeyboard("ru");
+    const wizardButtons = wizardKeyboard.payload.buttons.flat();
+    assert.ok(wizardButtons.some((button) => button.type === "callback" && button.payload === "wizard:create_demo"));
+    assert.ok(wizardButtons.some((button) => button.type === "callback" && button.payload === "wizard:publish_here"));
   });
 
   it("validates link button urls for MAX constraints", () => {
@@ -222,6 +230,12 @@ describe("bot testable helpers", () => {
     assert.match(text, /Роль: owner/);
     assert.match(text, /Конкурсы: всего=5/);
     assert.match(text, /локальная/);
+  });
+
+  it("extracts chat id from context", () => {
+    assert.strictEqual(__testables.extractChatId({ chatId: 123 }), 123);
+    assert.strictEqual(__testables.extractChatId({ message: { recipient: { chat_id: 456 } } }), 456);
+    assert.strictEqual(__testables.extractChatId({}), null);
   });
 });
 

@@ -55,6 +55,20 @@ function extractText(ctx: Ctx): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function extractChatId(ctx: Ctx): number | null {
+  const raw =
+    ctx?.chatId ??
+    ctx?.message?.recipient?.chat_id ??
+    ctx?.update?.message?.recipient?.chat_id ??
+    ctx?.message?.chat_id ??
+    ctx?.update?.chat_id;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  return value;
+}
+
 function parseCommandArgs(fullText: string): string {
   const parts = fullText.split(" ");
   parts.shift();
@@ -243,6 +257,7 @@ function buildHelpKeyboard(locale: SupportedLocale, canManage: boolean): ReturnT
       Keyboard.button.callback(L ? "Beginner guide" : "Инструкция для новичка", "help:guide_user"),
       Keyboard.button.callback(L ? "Admin guide" : "Инструкция для админа", "help:guide_admin"),
     ],
+    [Keyboard.button.callback(L ? "Master scenario" : "Мастер-сценарий", "wizard:start")],
     [
       Keyboard.button.callback(L ? "What next" : "Что дальше", "help:nextsteps"),
       Keyboard.button.callback(L ? "Templates" : "Шаблоны", "help:templates"),
@@ -363,12 +378,13 @@ function buildSchoolUserGuideMessage(locale: SupportedLocale): string {
     ].join("\n");
   }
   return [
-    "Инструкция для новичка (очень просто):",
-    "1) Нажми кнопку 'Участвовать' под постом конкурса или напиши /join contest_id.",
-    "2) Дождись времени розыгрыша.",
-    "3) Смотри победителей в чате.",
-    "4) Проверь честность через /proof contest_id.",
-    "Правило: один реальный аккаунт на человека.",
+    "Инструкция для школьника (3 шага):",
+    "1) Нажми кнопку 'Участвовать'.",
+    "2) Жди время розыгрыша.",
+    "3) Проверь победителей в чате.",
+    "",
+    "Если ошибка: открой /faq.",
+    "Если хочешь проверить честность: /proof contest_id.",
   ].join("\n");
 }
 
@@ -385,7 +401,11 @@ function buildAdminIntegrationGuideMessage(locale: SupportedLocale): string {
     ].join("\n");
   }
   return [
-    "Инструкция для админа: интеграция в группы/каналы",
+    "Инструкция для админа: кто и как использует бота",
+    "Кто делает розыгрыши: owner/admin/moderator.",
+    "Кто участвует: обычные пользователи (кнопка Join).",
+    "",
+    "Как подключить в группу/канал:",
     "1) Добавь бота в группу/канал и выдай нужные права.",
     "2) Создай конкурс: /newcontest Название | 2026-12-31T20:00:00Z | 1",
     "3) (Опционально) обязательные чаты: /setrequired contest_id chat1,chat2",
@@ -435,12 +455,45 @@ function buildPostTemplateMessage(locale: SupportedLocale): string {
   }
   return [
     "Готовый шаблон поста для розыгрыша:",
-    "🎁 Разыгрываем: <Приз>",
-    "✅ Как участвовать: нажмите кнопку 'Участвовать'",
-    "🕒 Время розыгрыша: <Дата/время>",
+    "🎁 Разыгрываем: <Приз/сертификат>",
+    "✅ Условие: нажмите кнопку 'Участвовать' (это 1 клик)",
+    "🕒 Итоги: <Дата/время>",
     "🔍 Проверка честности: /proof contest_id после draw",
     "👥 Один аккаунт на человека",
+    "📩 Победителю напишем в личку/публично в чате",
   ].join("\n");
+}
+
+function buildWizardIntroMessage(locale: SupportedLocale): string {
+  if (locale === "en") {
+    return [
+      "Master scenario (one-tap):",
+      "Step 1: create demo contest",
+      "Step 2: publish in current chat",
+      "Step 3: check status",
+      "Step 4: run draw and proof",
+    ].join("\n");
+  }
+  return [
+    "Мастер-сценарий (one-tap):",
+    "Шаг 1: создать демо-конкурс",
+    "Шаг 2: опубликовать в текущий чат",
+    "Шаг 3: проверить статус",
+    "Шаг 4: провести draw и посмотреть proof",
+  ].join("\n");
+}
+
+function buildWizardKeyboard(locale: SupportedLocale): ReturnType<typeof Keyboard.inlineKeyboard> {
+  const L = locale === "en";
+  return Keyboard.inlineKeyboard([
+    [Keyboard.button.callback(L ? "1) Create demo" : "1) Создать демо", "wizard:create_demo")],
+    [Keyboard.button.callback(L ? "2) Publish here" : "2) Опубликовать сюда", "wizard:publish_here")],
+    [
+      Keyboard.button.callback(L ? "3) Status" : "3) Статус", "wizard:status"),
+      Keyboard.button.callback(L ? "4) Draw" : "4) Draw", "wizard:draw"),
+    ],
+    [Keyboard.button.callback(L ? "5) Proof" : "5) Proof", "wizard:proof")],
+  ]);
 }
 
 function withAuditEntry(contest: Contest, entry: ContestAuditEntry): Contest {
@@ -813,6 +866,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   const drawLocks = new Map<string, number>();
   const suspiciousActivity = new Map<string, { count: number; windowStart: number; lastAlertAt: number }>();
   const alertDigestState = { lastSignature: "", lastSentAt: 0 };
+  const wizardState = new Map<string, string>();
   const msg = (key: Parameters<typeof t>[1], vars?: Record<string, string | number>) =>
     t(config.defaultLocale, key, vars);
   const sendAdminPanelEntry = async (ctx: Ctx, userId: string): Promise<void> => {
@@ -853,6 +907,21 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     }
   };
 
+  const resolveWizardContest = (userId: string): Contest | null => {
+    const preferredId = wizardState.get(userId);
+    if (preferredId) {
+      const byId = storage.get(preferredId);
+      if (byId) {
+        return byId;
+      }
+    }
+    const latestByUser = storage
+      .list()
+      .filter((contest) => contest.createdBy === userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    return latestByUser ?? null;
+  };
+
   bot.catch((error: unknown, _ctx: Ctx) => {
     logger.error("bot_handler_error", { message: error instanceof Error ? error.message : String(error) });
   });
@@ -860,6 +929,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.api.setMyCommands([
     { name: "start", description: "Помощь и команды" },
     { name: "guide", description: "Инструкция для новичков и админов" },
+    { name: "wizard", description: "Мастер-сценарий one-tap (создать -> publish -> draw)" },
     { name: "help", description: "Онбординг и полный список команд" },
     { name: "faq", description: "Вопросы и ответы по боту" },
     { name: "posttemplate", description: "Готовый шаблон поста розыгрыша" },
@@ -947,6 +1017,19 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
         attachments: [buildHelpKeyboard(config.defaultLocale, canManage)],
       },
     );
+  });
+
+  bot.command("wizard", (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      return ctx.reply(msg("userNotDetected"));
+    }
+    if (!canManageContest(config, user.id)) {
+      return ctx.reply("Мастер-сценарий доступен owner/admin.");
+    }
+    return ctx.reply(buildWizardIntroMessage(config.defaultLocale), {
+      attachments: [buildWizardKeyboard(config.defaultLocale)],
+    });
   });
 
   bot.command("faq", (ctx: Ctx) => {
@@ -1517,6 +1600,165 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     });
   });
 
+  bot.action(/^wizard:(.+)$/, async (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      await ctx.answerOnCallback({ notification: msg("userNotDetected") });
+      return;
+    }
+    if (!canManageContest(config, user.id)) {
+      await ctx.answerOnCallback({ notification: "Только owner/admin." });
+      return;
+    }
+    const payload = String(ctx.callback?.payload ?? "");
+    const action = payload.replace(/^wizard:/, "");
+
+    if (action === "start") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(buildWizardIntroMessage(config.defaultLocale), {
+        attachments: [buildWizardKeyboard(config.defaultLocale)],
+      });
+      return;
+    }
+
+    if (action === "create_demo") {
+      const endsAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      const contest: Contest = {
+        id: crypto.randomBytes(4).toString("hex"),
+        title: `DEMO Розыгрыш ${new Date().toLocaleDateString("ru-RU")}`,
+        createdBy: user.id,
+        createdAt: new Date().toISOString(),
+        endsAt,
+        maxWinners: 1,
+        status: "active",
+        requiredChats: [],
+        participants: [],
+        winners: [],
+        auditLog: [
+          {
+            at: new Date().toISOString(),
+            action: "created",
+            actorId: user.id,
+            details: "Создан через wizard",
+          },
+        ],
+      };
+      storage.create(contest);
+      wizardState.set(user.id, contest.id);
+      await ctx.answerOnCallback({ notification: "Создано" });
+      await ctx.reply(
+        [
+          `Демо-конкурс создан: ${contest.id}`,
+          "Следующий шаг: нажмите кнопку '2) Опубликовать сюда'.",
+          `Или вручную: /publish ${contest.id} chat_id`,
+        ].join("\n"),
+        { attachments: [buildWizardKeyboard(config.defaultLocale)] },
+      );
+      return;
+    }
+
+    const contest = resolveWizardContest(user.id);
+    if (!contest) {
+      await ctx.answerOnCallback({ notification: "Сначала создайте демо-конкурс (шаг 1)." });
+      return;
+    }
+
+    if (action === "publish_here") {
+      const chatId = extractChatId(ctx);
+      if (!chatId) {
+        await ctx.answerOnCallback({ notification: "Не удалось определить текущий чат." });
+        return;
+      }
+      const postText = [
+        `🎁 ${contest.title}`,
+        "Нажмите кнопку 'Участвовать' ниже.",
+        `Окончание: ${contest.endsAt}`,
+        `Проверка честности: /proof ${contest.id}`,
+      ].join("\n");
+
+      const message = await bot.api.sendMessageToChat(chatId, postText, {
+        attachments: [Keyboard.inlineKeyboard([[Keyboard.button.callback("Участвовать", `join:${contest.id}`)]])],
+      });
+      storage.update(contest.id, (prev) => ({
+        ...prev,
+        publishChatId: chatId,
+        publishMessageId: message.body?.mid ?? undefined,
+      }));
+      await ctx.answerOnCallback({ notification: "Опубликовано" });
+      await ctx.reply("Пост опубликован в текущий чат. Далее нажмите '3) Статус'.", {
+        attachments: [buildWizardKeyboard(config.defaultLocale)],
+      });
+      return;
+    }
+
+    if (action === "status") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(
+        [
+          `Contest: ${contest.id}`,
+          `Статус: ${contest.status}`,
+          `Участников: ${contest.participants.length}`,
+          `Победители: ${contest.winners.join(", ") || "-"}`,
+        ].join("\n"),
+        { attachments: [buildWizardKeyboard(config.defaultLocale)] },
+      );
+      return;
+    }
+
+    if (action === "draw") {
+      if (contest.status !== "active") {
+        await ctx.answerOnCallback({ notification: "Конкурс уже завершен." });
+        return;
+      }
+      if (contest.participants.length === 0) {
+        await ctx.answerOnCallback({ notification: "Нет участников. Сначала пусть нажмут Join." });
+        return;
+      }
+      const result = runDeterministicDraw(contest);
+      const updated = storage.update(contest.id, (prev) =>
+        withAuditEntry(
+          {
+            ...prev,
+            status: "completed",
+            winners: result.winners,
+            drawSeed: result.seed,
+          },
+          {
+            at: new Date().toISOString(),
+            action: "draw",
+            actorId: user.id,
+            details: "draw через wizard",
+          },
+        ),
+      );
+      if (!updated) {
+        await ctx.answerOnCallback({ notification: "Ошибка draw." });
+        return;
+      }
+      await ctx.answerOnCallback({ notification: "Draw выполнен" });
+      await ctx.reply(
+        [`Победители: ${updated.winners.join(", ")}`, `Proof seed: ${updated.drawSeed ?? "-"}`].join("\n"),
+        { attachments: [buildWizardKeyboard(config.defaultLocale)] },
+      );
+      return;
+    }
+
+    if (action === "proof") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(
+        [
+          `Contest: ${contest.id}`,
+          `Status: ${contest.status}`,
+          `Seed: ${contest.drawSeed ?? "еще не сгенерирован (сначала draw)"}`,
+          `Winners: ${contest.winners.join(", ") || "-"}`,
+        ].join("\n"),
+      );
+      return;
+    }
+
+    await ctx.answerOnCallback({ notification: "Неизвестное действие wizard." });
+  });
+
   bot.action(/^help:(.+)$/, async (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
@@ -1754,6 +1996,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
 export const __testables = {
   extractUser,
+  extractChatId,
   buildHelpMessage,
   buildHelpKeyboard,
   buildCommandTemplates,
@@ -1765,6 +2008,8 @@ export const __testables = {
   buildAdminIntegrationGuideMessage,
   buildFaqMessage,
   buildPostTemplateMessage,
+  buildWizardIntroMessage,
+  buildWizardKeyboard,
   buildAlertDigestSignature,
   formatAlertDigestMessage,
   buildAdminPanelUrl,

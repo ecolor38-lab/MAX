@@ -154,3 +154,4 @@
 - [x] Добавлен one-command tunnel flow для публичной админки в MAX: `npm run tunnel:up`
 - [x] Добавлены команды для онбординга школьного уровня: `/guide`, `/faq`, `/posttemplate`
 - [x] Добавлен документ юнит-экономики: `UNIT_ECONOMICS.md`
+- [x] Добавлен мастер-сценарий one-tap `/wizard` (создать демо -> опубликовать -> статус -> draw/proof)
