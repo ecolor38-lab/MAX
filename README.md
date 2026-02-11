@@ -24,6 +24,19 @@ cp .env.example .env
 npm run dev
 ```
 
+## Запуск в Docker
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+Логи контейнера:
+
+```bash
+docker compose logs -f
+```
+
 Заполните в `.env`:
 
 - `BOT_TOKEN` - токен бота MAX.
