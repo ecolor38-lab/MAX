@@ -157,5 +157,13 @@ describe("bot testable helpers", () => {
     assert.match(text, /\[ALERT DIGEST\]/);
     assert.match(text, /a: A/);
   });
+
+  it("builds help message with onboarding and help command", () => {
+    const text = __testables.buildHelpMessage("ru");
+    assert.match(text, /справка/);
+    assert.match(text, /\/help/);
+    assert.match(text, /Быстрый старт/);
+    assert.match(text, /\/newcontest/);
+  });
 });
 

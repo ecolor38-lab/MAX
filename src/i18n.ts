@@ -7,6 +7,11 @@ type I18nKey =
   | "contestNotFound"
   | "startTitle"
   | "startCommandsLabel"
+  | "helpTitle"
+  | "helpQuickStartLabel"
+  | "helpPublicCommandsLabel"
+  | "helpAdminCommandsLabel"
+  | "helpHint"
   | "whoami"
   | "myRole";
 
@@ -18,6 +23,11 @@ const DICT: Record<SupportedLocale, Record<I18nKey, string>> = {
     contestNotFound: "Конкурс не найден.",
     startTitle: "MAX Contest Bot запущен.",
     startCommandsLabel: "Команды:",
+    helpTitle: "MAX Contest Bot — справка",
+    helpQuickStartLabel: "Быстрый старт:",
+    helpPublicCommandsLabel: "Публичные команды:",
+    helpAdminCommandsLabel: "Админ-команды:",
+    helpHint: "Подсказка: сначала создайте конкурс, затем публикуйте и проводите draw.",
     whoami: "Ваш user ID: {{userId}}",
     myRole: "Ваша роль: {{role}}",
   },
@@ -28,6 +38,11 @@ const DICT: Record<SupportedLocale, Record<I18nKey, string>> = {
     contestNotFound: "Contest not found.",
     startTitle: "MAX Contest Bot started.",
     startCommandsLabel: "Commands:",
+    helpTitle: "MAX Contest Bot — help",
+    helpQuickStartLabel: "Quick start:",
+    helpPublicCommandsLabel: "Public commands:",
+    helpAdminCommandsLabel: "Admin commands:",
+    helpHint: "Tip: create contest first, then publish and run draw.",
     whoami: "Your user ID: {{userId}}",
     myRole: "Your role: {{role}}",
   },

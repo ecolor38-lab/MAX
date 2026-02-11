@@ -5,7 +5,7 @@ import { Bot, Keyboard } from "@maxhub/max-bot-api";
 import { buildAlertsReport } from "./admin-panel";
 import type { AppConfig } from "./config";
 import { runDeterministicDraw } from "./draw";
-import { t } from "./i18n";
+import { t, type SupportedLocale } from "./i18n";
 import type { AppLogger } from "./logger";
 import { ContestRepository } from "./repository";
 import type { Contest, ContestAuditEntry, Participant } from "./types";
@@ -170,6 +170,43 @@ function parseEditContestArgs(raw: string): {
 
 function toContestLine(contest: Contest): string {
   return `#${contest.id} | ${contest.title} | status=${contest.status} | participants=${contest.participants.length} | winners=${contest.maxWinners} | requiredChats=${contest.requiredChats.length}`;
+}
+
+function buildHelpMessage(locale: SupportedLocale): string {
+  const msg = (key: Parameters<typeof t>[1], vars?: Record<string, string | number>) => t(locale, key, vars);
+  return [
+    msg("helpTitle"),
+    "",
+    msg("helpQuickStartLabel"),
+    "1) /newcontest Название | 2026-12-31T20:00:00Z | 1",
+    "2) /publish contest_id chat_id [текст]",
+    "3) /join contest_id",
+    "4) /draw contest_id",
+    "",
+    msg("helpPublicCommandsLabel"),
+    "/start",
+    "/help",
+    "/whoami",
+    "/myrole",
+    "/contests",
+    "/join contest_id [referrer_user_id]",
+    "/myref contest_id",
+    "/proof contest_id",
+    "",
+    msg("helpAdminCommandsLabel"),
+    "/adminpanel",
+    "/newcontest",
+    "/setrequired contest_id chat_id[,chat_id2,...]",
+    "/editcontest contest_id | title|- | endsAt|- | winners|-",
+    "/closecontest contest_id",
+    "/reopencontest contest_id ISO-дата",
+    "/publish contest_id chat_id [текст_поста]",
+    "/draw contest_id",
+    "/reroll contest_id",
+    "/contestaudit contest_id",
+    "",
+    msg("helpHint"),
+  ].join("\n");
 }
 
 function withAuditEntry(contest: Contest, entry: ContestAuditEntry): Contest {
@@ -547,6 +584,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
   bot.api.setMyCommands([
     { name: "start", description: "Помощь и команды" },
+    { name: "help", description: "Онбординг и полный список команд" },
     { name: "myrole", description: "Показать роль: /myrole" },
     { name: "adminpanel", description: "Открыть админ-панель: /adminpanel" },
     { name: "whoami", description: "Показать ваш user ID" },
@@ -606,29 +644,11 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
       }
     }
 
-    return ctx.reply(
-      [
-        msg("startTitle"),
-        "",
-        msg("startCommandsLabel"),
-        "/whoami",
-        "/myrole",
-        "/adminpanel",
-        "/newcontest Название | ISO-дата-окончания | число_победителей",
-        "/contests",
-        "/setrequired contest_id chat_id[,chat_id2,...]",
-        "/myref contest_id",
-        "/join contest_id [referrer_user_id]",
-        "/proof contest_id",
-        "/contestaudit contest_id",
-        "/editcontest contest_id | title|- | endsAt|- | winners|-",
-        "/closecontest contest_id",
-        "/reopencontest contest_id ISO-дата",
-        "/publish contest_id chat_id [текст_поста]",
-        "/draw contest_id (только админ)",
-        "/reroll contest_id (только админ)",
-      ].join("\n"),
-    );
+    return ctx.reply([msg("startTitle"), "", buildHelpMessage(config.defaultLocale)].join("\n"));
+  });
+
+  bot.command("help", (ctx: Ctx) => {
+    return ctx.reply(buildHelpMessage(config.defaultLocale));
   });
 
   bot.command("whoami", (ctx: Ctx) => {
@@ -1333,6 +1353,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
 export const __testables = {
   extractUser,
+  buildHelpMessage,
   buildAlertDigestSignature,
   formatAlertDigestMessage,
   buildAdminPanelUrl,

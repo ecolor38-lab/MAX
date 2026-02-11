@@ -141,3 +141,9 @@
 - [x] Docker `HEALTHCHECK` по `/health`
 - [x] Добавлен операционный runbook (`RUNBOOK.md`)
 - [x] Добавлены тесты конфигурации (`src/config.test.ts`)
+
+## 8) UX & E2E polish
+
+- [x] Улучшен onboarding/UX ответов (`/start` + новый `/help`)
+- [x] Добавлен полный help-гайд по командам для пользователей и админов
+- [x] Добавлен smoke-скрипт `scripts/smoke.sh` и чеклист `scripts/SMOKE-CHECKLIST.md`

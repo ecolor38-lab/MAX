@@ -24,6 +24,12 @@ cp .env.example .env
 npm run dev
 ```
 
+Быстрый smoke-check после запуска:
+
+```bash
+npm run smoke
+```
+
 ## Как посмотреть готовый результат
 
 1. Запустите бота: `npm run dev`.
@@ -93,6 +99,7 @@ docker compose logs -f
 /reopencontest contest_id 2026-12-31T20:00:00Z
 /contestaudit contest_id
 /adminpanel
+/help
 ```
 
 - `editcontest` меняет параметры существующего конкурса.
@@ -100,6 +107,7 @@ docker compose logs -f
 - `reopencontest` открывает завершенный конкурс заново с новой датой окончания.
 - `contestaudit` показывает последние записи журнала действий по конкурсу.
 - `adminpanel` открывает ссылку на мини-админку (только owner/admin) с подписью `uid/ts/sig`.
+- `help` показывает структурированный onboarding по командам и быстрому старту.
 
 ### Web mini-app админка (встроенная)
 
@@ -123,6 +131,9 @@ docker compose logs -f
   - rate-limit на endpoint’ы (`ADMIN_PANEL_RATE_LIMIT_WINDOW_MS` + `ADMIN_PANEL_RATE_LIMIT_MAX`).
 - Alert digest:
   - бот автоматически отправляет owner/admin сводку аномалий из `/alerts` с периодом `ADMIN_ALERT_DIGEST_INTERVAL_MS`.
+- Smoke сценарии:
+  - `scripts/smoke.sh` — автоматическая проверка `/health` и подписанных admin endpoint'ов.
+  - `scripts/SMOKE-CHECKLIST.md` — ручной чеклист E2E в MAX.
 
 ## Роли и доступы
 
