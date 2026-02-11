@@ -389,7 +389,7 @@ type AdminAlert = {
   value: number;
 };
 
-function buildAlertsReport(contests: Contest[]): {
+export function buildAlertsReport(contests: Contest[]): {
   generatedAt: string;
   totals: { contests: number; active: number; completed: number };
   alerts: AdminAlert[];
