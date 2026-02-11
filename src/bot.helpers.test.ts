@@ -187,11 +187,11 @@ describe("bot testable helpers", () => {
     assert.match(steps, /\/draw contest_id/);
 
     const userGuide = __testables.buildSchoolUserGuideMessage("ru");
-    assert.match(userGuide, /Инструкция для школьника/);
+    assert.match(userGuide, /Инструкция для обычного пользователя/);
     assert.match(userGuide, /\/faq/);
 
     const adminGuide = __testables.buildAdminIntegrationGuideMessage("ru");
-    assert.match(adminGuide, /Инструкция для админа/);
+    assert.match(adminGuide, /Инструкция для администратора/);
     assert.match(adminGuide, /\/newcontest/);
 
     const faq = __testables.buildFaqMessage("ru");

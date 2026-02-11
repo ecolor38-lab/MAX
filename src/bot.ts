@@ -254,8 +254,8 @@ function buildHelpKeyboard(locale: SupportedLocale, canManage: boolean): ReturnT
   const L = locale === "en";
   const rows = [
     [
-      Keyboard.button.callback(L ? "Beginner guide" : "Инструкция для новичка", "help:guide_user"),
-      Keyboard.button.callback(L ? "Admin guide" : "Инструкция для админа", "help:guide_admin"),
+      Keyboard.button.callback(L ? "User guide" : "Инструкция для пользователя", "help:guide_user"),
+      Keyboard.button.callback(L ? "Admin guide" : "Инструкция для администратора", "help:guide_admin"),
     ],
     [Keyboard.button.callback(L ? "Master scenario" : "Мастер-сценарий", "wizard:start")],
     [
@@ -369,7 +369,7 @@ function buildStatusMessage(input: {
 function buildSchoolUserGuideMessage(locale: SupportedLocale): string {
   if (locale === "en") {
     return [
-      "Beginner guide (very simple):",
+      "User guide (simple):",
       "1) Press Join button under contest post OR send /join contest_id.",
       "2) Wait for draw time.",
       "3) Check winners in chat.",
@@ -378,7 +378,7 @@ function buildSchoolUserGuideMessage(locale: SupportedLocale): string {
     ].join("\n");
   }
   return [
-    "Инструкция для школьника (3 шага):",
+    "Инструкция для обычного пользователя (3 шага):",
     "1) Нажми кнопку 'Участвовать'.",
     "2) Жди время розыгрыша.",
     "3) Проверь победителей в чате.",
@@ -401,7 +401,7 @@ function buildAdminIntegrationGuideMessage(locale: SupportedLocale): string {
     ].join("\n");
   }
   return [
-    "Инструкция для админа: кто и как использует бота",
+    "Инструкция для администратора: кто и как использует бота",
     "Кто делает розыгрыши: owner/admin/moderator.",
     "Кто участвует: обычные пользователи (кнопка Join).",
     "",
