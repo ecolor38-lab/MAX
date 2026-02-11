@@ -8,6 +8,8 @@ import { ContestRepository } from "./repository";
 import type { Contest, Participant } from "./types";
 
 type Ctx = any;
+const COMMAND_COOLDOWN_MS = 1500;
+const DRAW_LOCK_TTL_MS = 10_000;
 
 function extractUser(ctx: Ctx): { id: string; username?: string } | null {
   const user = ctx?.user?.();
@@ -86,6 +88,23 @@ function parseStartJoinPayload(raw: string): { contestId: string; referrerId?: s
 
 function toContestLine(contest: Contest): string {
   return `#${contest.id} | ${contest.title} | status=${contest.status} | participants=${contest.participants.length} | winners=${contest.maxWinners} | requiredChats=${contest.requiredChats.length}`;
+}
+
+function hitCooldown(
+  state: Map<string, number>,
+  key: string,
+  cooldownMs: number,
+): { ok: true } | { ok: false; waitSeconds: number } {
+  const now = Date.now();
+  const nextAllowedAt = state.get(key) ?? 0;
+  if (nextAllowedAt > now) {
+    return {
+      ok: false,
+      waitSeconds: Math.max(1, Math.ceil((nextAllowedAt - now) / 1000)),
+    };
+  }
+  state.set(key, now + cooldownMs);
+  return { ok: true };
 }
 
 async function findMissingRequiredChats(
@@ -261,6 +280,8 @@ async function publishContestResults(bot: Bot, contest: Contest): Promise<void> 
 export function createContestBot(config: AppConfig): Bot {
   const repository = new ContestRepository(config.storagePath);
   const bot = new Bot(config.botToken);
+  const commandCooldowns = new Map<string, number>();
+  const drawLocks = new Map<string, number>();
 
   bot.api.setMyCommands([
     { name: "start", description: "Помощь и команды" },
@@ -347,6 +368,10 @@ export function createContestBot(config: AppConfig): Bot {
     if (!isAdmin(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
+    const cooldown = hitCooldown(commandCooldowns, `newcontest:${user.id}`, COMMAND_COOLDOWN_MS);
+    if (!cooldown.ok) {
+      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
+    }
 
     const payload = parseCommandArgs(extractText(ctx));
     const [titleRaw, endsAtRaw, winnersRaw] = payload.split("|").map((item) => item?.trim());
@@ -400,6 +425,10 @@ export function createContestBot(config: AppConfig): Bot {
     if (!isAdmin(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
+    const cooldown = hitCooldown(commandCooldowns, `setrequired:${user.id}`, COMMAND_COOLDOWN_MS);
+    if (!cooldown.ok) {
+      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
+    }
 
     const argsRaw = parseCommandArgs(extractText(ctx));
     const [contestId, ...rawChatParts] = argsRaw.split(" ").filter(Boolean);
@@ -430,6 +459,11 @@ export function createContestBot(config: AppConfig): Bot {
     const user = extractUser(ctx);
     if (!user) {
       return ctx.reply("Не удалось определить пользователя.");
+    }
+
+    const cooldown = hitCooldown(commandCooldowns, `join:${user.id}`, COMMAND_COOLDOWN_MS);
+    if (!cooldown.ok) {
+      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
     }
 
     const { contestId, referrerId } = parseJoinArgs(parseCommandArgs(extractText(ctx)));
@@ -487,6 +521,10 @@ export function createContestBot(config: AppConfig): Bot {
     if (!isAdmin(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
+    const cooldown = hitCooldown(commandCooldowns, `publish:${user.id}`, COMMAND_COOLDOWN_MS);
+    if (!cooldown.ok) {
+      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
+    }
 
     const argsRaw = parseCommandArgs(extractText(ctx));
     const [contestId, chatIdRaw, ...textParts] = argsRaw.split(" ").filter(Boolean);
@@ -537,6 +575,14 @@ export function createContestBot(config: AppConfig): Bot {
       return;
     }
 
+    const cooldown = hitCooldown(commandCooldowns, `join_callback:${user.id}`, COMMAND_COOLDOWN_MS);
+    if (!cooldown.ok) {
+      await ctx.answerOnCallback({
+        notification: `Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`,
+      });
+      return;
+    }
+
     const payload = ctx.callback?.payload ?? "";
     const contestId = String(payload).replace(/^join:/, "");
     if (!contestId) {
@@ -565,6 +611,10 @@ export function createContestBot(config: AppConfig): Bot {
     if (!isAdmin(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
+    const userCooldown = hitCooldown(commandCooldowns, `draw:${user.id}`, COMMAND_COOLDOWN_MS);
+    if (!userCooldown.ok) {
+      return ctx.reply(`Слишком часто. Повторите через ${userCooldown.waitSeconds} сек.`);
+    }
 
     const contestId = parseCommandArgs(extractText(ctx));
     if (!contestId) {
@@ -575,8 +625,15 @@ export function createContestBot(config: AppConfig): Bot {
     if (!contest) {
       return ctx.reply("Конкурс не найден.");
     }
+    if (contest.status !== "active") {
+      return ctx.reply("Конкурс уже завершен. Используйте /reroll для перевыбора.");
+    }
     if (contest.participants.length === 0) {
       return ctx.reply("В конкурсе нет участников.");
+    }
+    const lock = hitCooldown(drawLocks, `draw:${contest.id}`, DRAW_LOCK_TTL_MS);
+    if (!lock.ok) {
+      return ctx.reply(`Жеребьевка уже выполняется. Повторите через ${lock.waitSeconds} сек.`);
     }
 
     const result = runDeterministicDraw(contest);
@@ -610,6 +667,10 @@ export function createContestBot(config: AppConfig): Bot {
     if (!isAdmin(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
+    const userCooldown = hitCooldown(commandCooldowns, `reroll:${user.id}`, COMMAND_COOLDOWN_MS);
+    if (!userCooldown.ok) {
+      return ctx.reply(`Слишком часто. Повторите через ${userCooldown.waitSeconds} сек.`);
+    }
 
     const contestId = parseCommandArgs(extractText(ctx));
     if (!contestId) {
@@ -620,8 +681,15 @@ export function createContestBot(config: AppConfig): Bot {
     if (!contest) {
       return ctx.reply("Конкурс не найден.");
     }
+    if (contest.status !== "completed") {
+      return ctx.reply("Reroll доступен только после завершения конкурса.");
+    }
     if (contest.participants.length === 0) {
       return ctx.reply("В конкурсе нет участников.");
+    }
+    const lock = hitCooldown(drawLocks, `reroll:${contest.id}`, DRAW_LOCK_TTL_MS);
+    if (!lock.ok) {
+      return ctx.reply(`Reroll уже выполняется. Повторите через ${lock.waitSeconds} сек.`);
     }
 
     const result = runDeterministicDraw({
