@@ -10,6 +10,9 @@ import type { Contest, ContestAuditEntry } from "./types";
 const TOKEN_TTL_MS = 10 * 60 * 1000;
 const FILTER_ALL = "all";
 type StatusFilter = Contest["status"] | typeof FILTER_ALL;
+const DEFAULT_PAGE_SIZE = 10;
+const MAX_PAGE_SIZE = 100;
+type BulkAction = "bulk_close" | "bulk_draw" | "bulk_reroll";
 
 function escapeHtml(input: string): string {
   return input
@@ -84,6 +87,18 @@ function parseStatusFilter(value: string | null): StatusFilter {
   return FILTER_ALL;
 }
 
+function parsePositiveInt(raw: string | null, fallback: number): number {
+  const parsed = Number(raw ?? "");
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  const normalized = Math.floor(parsed);
+  if (normalized < 1) {
+    return fallback;
+  }
+  return normalized;
+}
+
 function applyContestFilters(contests: Contest[], query: string, status: StatusFilter): Contest[] {
   const q = query.trim().toLowerCase();
   return contests.filter((contest) => {
@@ -97,20 +112,76 @@ function applyContestFilters(contests: Contest[], query: string, status: StatusF
   });
 }
 
+function paginateContests(
+  contests: Contest[],
+  pageRaw: string | null,
+  pageSizeRaw: string | null,
+): { items: Contest[]; page: number; pageSize: number; totalPages: number } {
+  const pageSize = Math.min(parsePositiveInt(pageSizeRaw, DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(contests.length / pageSize));
+  const page = Math.min(parsePositiveInt(pageRaw, 1), totalPages);
+  const start = (page - 1) * pageSize;
+  const items = contests.slice(start, start + pageSize);
+  return { items, page, pageSize, totalPages };
+}
+
+function toCsvValue(value: string): string {
+  const escaped = value.replaceAll('"', '""');
+  return `"${escaped}"`;
+}
+
+function buildContestCsv(contests: Contest[]): string {
+  const header = [
+    "id",
+    "title",
+    "status",
+    "participants",
+    "maxWinners",
+    "winners",
+    "endsAt",
+    "createdAt",
+  ].join(",");
+  const rows = contests.map((contest) =>
+    [
+      toCsvValue(contest.id),
+      toCsvValue(contest.title),
+      toCsvValue(contest.status),
+      String(contest.participants.length),
+      String(contest.maxWinners),
+      toCsvValue(contest.winners.join("|")),
+      toCsvValue(contest.endsAt),
+      toCsvValue(contest.createdAt),
+    ].join(","),
+  );
+  return [header, ...rows].join("\n");
+}
+
 function renderPage(
   contests: Contest[],
   basePath: string,
   signedParams: URLSearchParams,
-  filters: { query: string; status: StatusFilter },
+  filters: { query: string; status: StatusFilter; page: number; pageSize: number },
   flashMessage?: string,
 ): string {
   const filteredContests = applyContestFilters(contests, filters.query, filters.status);
+  const paging = paginateContests(filteredContests, String(filters.page), String(filters.pageSize));
   const totalParticipants = filteredContests.reduce((acc, contest) => acc + contest.participants.length, 0);
   const activeCount = filteredContests.filter((contest) => contest.status === "active").length;
   const completedCount = filteredContests.filter((contest) => contest.status === "completed").length;
+  const avgParticipants = filteredContests.length > 0 ? (totalParticipants / filteredContests.length).toFixed(1) : "0.0";
+  const totalDrawOps = filteredContests.reduce(
+    (acc, contest) =>
+      acc +
+      (contest.auditLog?.filter((entry) => entry.action === "draw" || entry.action === "reroll").length ?? 0),
+    0,
+  );
+  const completionRate = filteredContests.length > 0 ? Math.round((completedCount / filteredContests.length) * 100) : 0;
   const signedQuery = signedParams.toString();
+  const pageBaseParams = `${signedQuery}&q=${encodeURIComponent(filters.query)}&status=${encodeURIComponent(filters.status)}&pageSize=${filters.pageSize}`;
+  const prevPage = Math.max(1, paging.page - 1);
+  const nextPage = Math.min(paging.totalPages, paging.page + 1);
 
-  const rows = filteredContests
+  const rows = paging.items
     .map((contest) => {
       const status = escapeHtml(contest.status);
       const title = escapeHtml(contest.title);
@@ -118,6 +189,7 @@ function renderPage(
       const endsAtLocal = escapeHtml(toDatetimeLocalValue(contest.endsAt));
       return `
       <tr>
+        <td><input type="checkbox" name="contestIds" value="${escapeHtml(contest.id)}" form="bulk-form" /></td>
         <td><code>${escapeHtml(contest.id)}</code></td>
         <td>${title}</td>
         <td>${status}</td>
@@ -125,18 +197,18 @@ function renderPage(
         <td>${escapeHtml(contest.endsAt)}</td>
         <td>${winners}</td>
         <td>
-          <form method="post" action="${basePath}/action?${signedQuery}&q=${encodeURIComponent(filters.query)}&status=${encodeURIComponent(filters.status)}" class="inline">
+          <form method="post" action="${basePath}/action?${pageBaseParams}&page=${paging.page}" class="inline">
             <input type="hidden" name="contestId" value="${escapeHtml(contest.id)}" />
             <button name="action" value="draw">Draw</button>
             <button name="action" value="reroll">Reroll</button>
             <button name="action" value="close">Close</button>
           </form>
-          <form method="post" action="${basePath}/action?${signedQuery}&q=${encodeURIComponent(filters.query)}&status=${encodeURIComponent(filters.status)}" class="inline">
+          <form method="post" action="${basePath}/action?${pageBaseParams}&page=${paging.page}" class="inline">
             <input type="hidden" name="contestId" value="${escapeHtml(contest.id)}" />
             <input type="datetime-local" name="endsAt" required />
             <button name="action" value="reopen">Reopen</button>
           </form>
-          <form method="post" action="${basePath}/action?${signedQuery}&q=${encodeURIComponent(filters.query)}&status=${encodeURIComponent(filters.status)}" class="inline">
+          <form method="post" action="${basePath}/action?${pageBaseParams}&page=${paging.page}" class="inline">
             <input type="hidden" name="contestId" value="${escapeHtml(contest.id)}" />
             <input type="text" name="title" value="${title}" required />
             <input type="datetime-local" name="endsAt" value="${endsAtLocal}" required />
@@ -166,6 +238,9 @@ function renderPage(
       .metric { background: #1f2937; border: 1px solid #334155; padding: 6px 10px; border-radius: 6px; font-size: 13px; }
       input, select, button { background: #0b1220; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 6px 8px; }
       form.inline { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+      .pager { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+      .progress { width: 180px; height: 8px; border-radius: 999px; background: #1e293b; overflow: hidden; border: 1px solid #334155; }
+      .progress > span { display: block; height: 100%; background: linear-gradient(90deg, #22c55e, #38bdf8); width: ${completionRate}%; }
     </style>
   </head>
   <body>
@@ -184,9 +259,11 @@ function renderPage(
           <option value="completed"${filters.status === "completed" ? " selected" : ""}>completed</option>
           <option value="draft"${filters.status === "draft" ? " selected" : ""}>draft</option>
         </select>
+        <input type="number" name="pageSize" min="1" max="${MAX_PAGE_SIZE}" value="${filters.pageSize}" />
         <button type="submit">Применить</button>
       </form>
-      <form method="post" action="${basePath}/action?${signedQuery}&q=${encodeURIComponent(filters.query)}&status=${encodeURIComponent(filters.status)}" class="inline">
+      <a href="${basePath}/export?${pageBaseParams}" style="color:#93c5fd">Экспорт CSV</a>
+      <form method="post" action="${basePath}/action?${pageBaseParams}&page=${paging.page}" class="inline">
         <input type="text" name="title" placeholder="Название конкурса" required />
         <input type="datetime-local" name="endsAt" required />
         <input type="number" name="maxWinners" min="1" value="1" required />
@@ -198,17 +275,33 @@ function renderPage(
       <div class="metric">Active: ${activeCount}</div>
       <div class="metric">Completed: ${completedCount}</div>
       <div class="metric">Участников: ${totalParticipants}</div>
+      <div class="metric">Avg участников: ${avgParticipants}</div>
+      <div class="metric">Draw/Reroll ops: ${totalDrawOps}</div>
+      <div class="metric">Completion:
+        <span class="progress"><span></span></span>
+        ${completionRate}%
+      </div>
     </div>
     <table>
       <thead>
         <tr>
-          <th>ID</th><th>Название</th><th>Статус</th><th>Участников</th><th>EndsAt</th><th>Победители</th><th>Действия</th>
+          <th>Sel</th><th>ID</th><th>Название</th><th>Статус</th><th>Участников</th><th>EndsAt</th><th>Победители</th><th>Действия</th>
         </tr>
       </thead>
       <tbody>
-        ${rows || '<tr><td colspan="7">Конкурсы по фильтру отсутствуют</td></tr>'}
+        ${rows || '<tr><td colspan="8">Конкурсы по фильтру отсутствуют</td></tr>'}
       </tbody>
     </table>
+    <form id="bulk-form" method="post" action="${basePath}/action?${pageBaseParams}&page=${paging.page}" class="inline">
+    <div class="pager">
+      <button name="action" value="bulk_close">Bulk close</button>
+      <button name="action" value="bulk_draw">Bulk draw</button>
+      <button name="action" value="bulk_reroll">Bulk reroll</button>
+      <span>Стр. ${paging.page} / ${paging.totalPages}</span>
+      <a href="${basePath}?${pageBaseParams}&page=${prevPage}" style="color:#93c5fd">Prev</a>
+      <a href="${basePath}?${pageBaseParams}&page=${nextPage}" style="color:#93c5fd">Next</a>
+    </div>
+    </form>
   </body>
 </html>`;
 }
@@ -385,6 +478,36 @@ function performAction(
   return "Неизвестное действие.";
 }
 
+function performBulkAction(
+  repository: ContestRepository,
+  actorId: string,
+  action: BulkAction,
+  contestIds: string[],
+): string {
+  if (contestIds.length === 0) {
+    return "Выберите хотя бы один конкурс.";
+  }
+
+  let applied = 0;
+  for (const contestId of contestIds) {
+    const message = performAction(repository, {
+      contestId,
+      action: action.replace("bulk_", ""),
+      actorId,
+    });
+    const ok =
+      message.includes("выполнен") ||
+      message.includes("закрыт") ||
+      message.includes("переоткрыт") ||
+      message.includes("обновлен");
+    if (ok) {
+      applied += 1;
+    }
+  }
+
+  return `Bulk ${action} применен к ${applied} из ${contestIds.length}.`;
+}
+
 export function createAdminPanelServer(
   config: AppConfig,
   repository: ContestRepository,
@@ -409,7 +532,7 @@ export function createAdminPanelServer(
       return;
     }
 
-    if (pathName !== basePath && pathName !== `${basePath}/action`) {
+    if (pathName !== basePath && pathName !== `${basePath}/action` && pathName !== `${basePath}/export`) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("Not found");
       return;
@@ -432,9 +555,24 @@ export function createAdminPanelServer(
       const flash = requestUrl.searchParams.get("m") ?? undefined;
       const query = requestUrl.searchParams.get("q") ?? "";
       const status = parseStatusFilter(requestUrl.searchParams.get("status"));
-      const html = renderPage(repository.list(), basePath, signedParams, { query, status }, flash);
+      const page = parsePositiveInt(requestUrl.searchParams.get("page"), 1);
+      const pageSize = parsePositiveInt(requestUrl.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE);
+      const html = renderPage(repository.list(), basePath, signedParams, { query, status, page, pageSize }, flash);
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(html);
+      return;
+    }
+
+    if (method === "GET" && pathName === `${basePath}/export`) {
+      const query = requestUrl.searchParams.get("q") ?? "";
+      const status = parseStatusFilter(requestUrl.searchParams.get("status"));
+      const filtered = applyContestFilters(repository.list(), query, status);
+      const csv = buildContestCsv(filtered);
+      res.writeHead(200, {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="contests-${Date.now()}.csv"`,
+      });
+      res.end(csv);
       return;
     }
 
@@ -445,23 +583,26 @@ export function createAdminPanelServer(
       const endsAt = body.get("endsAt") ?? undefined;
       const title = body.get("title") ?? undefined;
       const maxWinners = body.get("maxWinners") ?? undefined;
-      const actionInput: Parameters<typeof performAction>[1] = {
-        action,
-        actorId: verification.userId,
-        ...(contestId ? { contestId } : {}),
-        ...(endsAt ? { endsAtInput: endsAt } : {}),
-        ...(title ? { titleInput: title } : {}),
-        ...(maxWinners ? { maxWinnersInput: maxWinners } : {}),
-      };
-      const message = performAction(repository, actionInput);
+      const contestIds = body.getAll("contestIds").map((value) => value.trim()).filter(Boolean);
+      const message =
+        action === "bulk_close" || action === "bulk_draw" || action === "bulk_reroll"
+          ? performBulkAction(repository, verification.userId, action as BulkAction, contestIds)
+          : performAction(repository, {
+              action,
+              actorId: verification.userId,
+              ...(contestId ? { contestId } : {}),
+              ...(endsAt ? { endsAtInput: endsAt } : {}),
+              ...(title ? { titleInput: title } : {}),
+              ...(maxWinners ? { maxWinnersInput: maxWinners } : {}),
+            });
       logger.info("admin_panel_action", { action, contestId, actorId: verification.userId, message });
 
       const query = requestUrl.searchParams.get("q") ?? "";
       const status = requestUrl.searchParams.get("status") ?? FILTER_ALL;
+      const page = parsePositiveInt(requestUrl.searchParams.get("page"), 1);
+      const pageSize = parsePositiveInt(requestUrl.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE);
       res.writeHead(302, {
-        Location: `${basePath}?${signedParams.toString()}&q=${encodeURIComponent(query)}&status=${encodeURIComponent(
-          status,
-        )}&m=${encodeURIComponent(message)}`,
+        Location: `${basePath}?${signedParams.toString()}&q=${encodeURIComponent(query)}&status=${encodeURIComponent(status)}&page=${page}&pageSize=${pageSize}&m=${encodeURIComponent(message)}`,
       });
       res.end();
       return;
@@ -481,6 +622,9 @@ export function createAdminPanelServer(
 export const __adminPanelTestables = {
   applyContestFilters,
   buildAdminSignature,
+  buildContestCsv,
+  paginateContests,
+  performBulkAction,
   performAction,
   toDatetimeLocalValue,
   verifyAdminSignature,

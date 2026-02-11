@@ -116,4 +116,36 @@ describe("admin panel helpers", () => {
     assert.strictEqual(byQuery.length, 1);
     assert.strictEqual(byQuery[0]?.id, "bb22");
   });
+
+  it("supports pagination helper", () => {
+    const contests: Contest[] = Array.from({ length: 23 }, (_, i) =>
+      mkContest({ id: `c${i + 1}`, title: `Contest ${i + 1}` }),
+    );
+    const page = __adminPanelTestables.paginateContests(contests, "2", "10");
+    assert.strictEqual(page.page, 2);
+    assert.strictEqual(page.pageSize, 10);
+    assert.strictEqual(page.totalPages, 3);
+    assert.strictEqual(page.items.length, 10);
+    assert.strictEqual(page.items[0]?.id, "c11");
+  });
+
+  it("exports contests to csv", () => {
+    const csv = __adminPanelTestables.buildContestCsv([
+      mkContest({ id: "x1", title: "A, B" }),
+      mkContest({ id: "x2", title: 'Quote "title"' }),
+    ]);
+    assert.match(csv, /id,title,status/);
+    assert.match(csv, /"x1","A, B"/);
+    assert.match(csv, /"x2","Quote ""title"""/);
+  });
+
+  it("performs bulk close action", () => {
+    const { repo } = mkRepo();
+    repo.create(mkContest({ id: "a1", participants: [] }));
+    repo.create(mkContest({ id: "a2", participants: [] }));
+    const message = __adminPanelTestables.performBulkAction(repo, "admin-1", "bulk_close", ["a1", "a2"]);
+    assert.match(message, /2 из 2/);
+    assert.strictEqual(repo.get("a1")?.status, "completed");
+    assert.strictEqual(repo.get("a2")?.status, "completed");
+  });
 });
