@@ -5,7 +5,7 @@ import type { AppConfig } from "./config";
 import { __testables } from "./bot";
 
 function mkConfig(overrides: Partial<AppConfig> = {}): AppConfig {
-  return {
+  const base: AppConfig = {
     botToken: "token-token-token",
     storagePath: "data/test.db",
     adminUserIds: new Set(["2"]),
@@ -13,8 +13,9 @@ function mkConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     referralBonusTickets: 1,
     referralMaxBonusTickets: 5,
     logPath: "data/test.log",
-    ...overrides,
+    defaultLocale: "ru",
   };
+  return Object.assign(base, overrides);
 }
 
 describe("bot testable helpers", () => {

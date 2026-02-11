@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SupportedLocale } from "./i18n";
 
 const EnvSchema = z.object({
   BOT_TOKEN: z.string().min(10, "BOT_TOKEN is required"),
@@ -9,6 +10,7 @@ const EnvSchema = z.object({
   REFERRAL_BONUS_TICKETS: z.coerce.number().int().min(0).default(1),
   REFERRAL_MAX_BONUS_TICKETS: z.coerce.number().int().min(0).default(5),
   LOG_PATH: z.string().optional().default("data/bot.log"),
+  DEFAULT_LOCALE: z.enum(["ru", "en"]).default("ru"),
 });
 
 export type AppConfig = {
@@ -20,6 +22,7 @@ export type AppConfig = {
   referralBonusTickets: number;
   referralMaxBonusTickets: number;
   logPath: string;
+  defaultLocale: SupportedLocale;
 };
 
 export function loadConfig(): AppConfig {
@@ -51,5 +54,6 @@ export function loadConfig(): AppConfig {
     referralBonusTickets: parsed.data.REFERRAL_BONUS_TICKETS,
     referralMaxBonusTickets: parsed.data.REFERRAL_MAX_BONUS_TICKETS,
     logPath: parsed.data.LOG_PATH,
+    defaultLocale: parsed.data.DEFAULT_LOCALE,
   };
 }

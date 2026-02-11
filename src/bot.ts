@@ -4,6 +4,7 @@ import { Bot, Keyboard } from "@maxhub/max-bot-api";
 
 import type { AppConfig } from "./config";
 import { runDeterministicDraw } from "./draw";
+import { t } from "./i18n";
 import type { AppLogger } from "./logger";
 import { ContestRepository } from "./repository";
 import type { Contest, ContestAuditEntry, Participant } from "./types";
@@ -466,6 +467,8 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
   const commandCooldowns = new Map<string, number>();
   const drawLocks = new Map<string, number>();
   const suspiciousActivity = new Map<string, { count: number; windowStart: number; lastAlertAt: number }>();
+  const msg = (key: Parameters<typeof t>[1], vars?: Record<string, string | number>) =>
+    t(config.defaultLocale, key, vars);
 
   bot.api.setMyCommands([
     { name: "start", description: "Помощь и команды" },
@@ -495,7 +498,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
   bot.command("start", async (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
 
     const startPayload = typeof ctx?.startPayload === "string" ? ctx.startPayload.trim() : "";
@@ -529,9 +532,9 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
 
     return ctx.reply(
       [
-        "MAX Contest Bot запущен.",
+        msg("startTitle"),
         "",
-        "Команды:",
+        msg("startCommandsLabel"),
         "/whoami",
         "/myrole",
         "/newcontest Название | ISO-дата-окончания | число_победителей",
@@ -554,17 +557,17 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
   bot.command("whoami", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
-    return ctx.reply(`Ваш user ID: ${user.id}`);
+    return ctx.reply(msg("whoami", { userId: user.id }));
   });
 
   bot.command("myrole", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
-    return ctx.reply(`Ваша роль: ${getUserRole(config, user.id)}`);
+    return ctx.reply(msg("myRole", { role: getUserRole(config, user.id) }));
   });
 
   bot.command("newcontest", (ctx: Ctx) => {

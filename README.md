@@ -45,6 +45,7 @@ docker compose logs -f
 - `MODERATOR_USER_IDS` - ID модераторов через запятую.
 - `STORAGE_PATH` - путь к хранилищу (по умолчанию `data/contests.db`).
 - `LOG_PATH` - путь до JSONL логов бота (по умолчанию `data/bot.log`).
+- `DEFAULT_LOCALE` - язык ответов бота (`ru` или `en`).
 
 ## Формат создания конкурса
 
