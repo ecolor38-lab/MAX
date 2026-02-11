@@ -14,6 +14,7 @@ function mkConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     referralMaxBonusTickets: 5,
     logPath: "data/test.log",
     defaultLocale: "ru",
+    adminPanelPort: 8787,
   };
   return Object.assign(base, overrides);
 }

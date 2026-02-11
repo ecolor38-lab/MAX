@@ -13,6 +13,7 @@ const EnvSchema = z.object({
   DEFAULT_LOCALE: z.enum(["ru", "en"]).default("ru"),
   ADMIN_PANEL_URL: z.string().optional().default(""),
   ADMIN_PANEL_SECRET: z.string().optional().default(""),
+  ADMIN_PANEL_PORT: z.coerce.number().int().min(1).max(65535).default(8787),
 });
 
 export type AppConfig = {
@@ -27,6 +28,7 @@ export type AppConfig = {
   defaultLocale: SupportedLocale;
   adminPanelUrl?: string;
   adminPanelSecret?: string;
+  adminPanelPort: number;
 };
 
 export function loadConfig(): AppConfig {
@@ -61,6 +63,7 @@ export function loadConfig(): AppConfig {
     referralMaxBonusTickets: parsed.data.REFERRAL_MAX_BONUS_TICKETS,
     logPath: parsed.data.LOG_PATH,
     defaultLocale: parsed.data.DEFAULT_LOCALE,
+    adminPanelPort: parsed.data.ADMIN_PANEL_PORT,
     ...(adminPanelUrl ? { adminPanelUrl } : {}),
     ...(adminPanelSecret ? { adminPanelSecret } : {}),
   };

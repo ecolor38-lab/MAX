@@ -471,8 +471,8 @@ async function publishContestResults(bot: Bot, contest: Contest): Promise<void> 
   );
 }
 
-export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
-  const repository = new ContestRepository(config.storagePath);
+export function createContestBot(config: AppConfig, logger: AppLogger, repository?: ContestRepository): Bot {
+  const storage = repository ?? new ContestRepository(config.storagePath);
   const bot = new Bot(config.botToken);
   const commandCooldowns = new Map<string, number>();
   const drawLocks = new Map<string, number>();
@@ -522,7 +522,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
         const result = await tryJoinContest(
           bot,
           config,
-          repository,
+          storage,
           parsedPayload.contestId,
           user,
           parsedPayload.referrerId,
@@ -652,7 +652,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       ],
     };
 
-    repository.create(contest);
+    storage.create(contest);
     logger.info("contest_created", { contestId: contest.id, actorId: user.id });
     return ctx.reply(
       `Конкурс создан.\nID: ${contest.id}\nНазвание: ${contest.title}\nЗавершение: ${contest.endsAt}\nПобедителей: ${contest.maxWinners}`,
@@ -660,7 +660,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
   });
 
   bot.command("contests", (ctx: Ctx) => {
-    const contests = repository.list();
+    const contests = storage.list();
     if (contests.length === 0) {
       return ctx.reply("Пока нет созданных конкурсов.");
     }
@@ -693,7 +693,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return ctx.reply("Нужно передать хотя бы один валидный числовой chat_id.");
     }
 
-    const updated = repository.update(contestId, (contest) => ({
+    const updated = storage.update(contestId, (contest) => ({
       ...contest,
       requiredChats: uniqueRequiredChats,
     }));
@@ -723,7 +723,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return ctx.reply("Укажите ID конкурса: /join contest_id [referrer_user_id]");
     }
 
-    const result = await tryJoinContest(bot, config, repository, contestId, user, referrerId);
+    const result = await tryJoinContest(bot, config, storage, contestId, user, referrerId);
     if (!result.ok) {
       return ctx.reply(result.message);
     }
@@ -746,7 +746,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return ctx.reply("Формат: /proof contest_id");
     }
 
-    const contest = repository.get(contestId);
+    const contest = storage.get(contestId);
     if (!contest) {
       return ctx.reply("Конкурс не найден.");
     }
@@ -781,7 +781,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return ctx.reply("Формат: /contestaudit contest_id");
     }
 
-    const contest = repository.get(contestId);
+    const contest = storage.get(contestId);
     if (!contest) {
       return ctx.reply("Конкурс не найден.");
     }
@@ -817,7 +817,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return ctx.reply("Формат: /editcontest contest_id | title|- | endsAt|- | winners|-");
     }
 
-    const updated = repository.update(parsed.contestId, (contest) => {
+    const updated = storage.update(parsed.contestId, (contest) => {
       let nextEndsAt = contest.endsAt;
       if (parsed.endsAt) {
         const date = new Date(parsed.endsAt);
@@ -877,7 +877,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return ctx.reply("Формат: /closecontest contest_id");
     }
 
-    const contest = repository.get(contestId);
+    const contest = storage.get(contestId);
     if (!contest) {
       return ctx.reply("Конкурс не найден.");
     }
@@ -887,7 +887,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
 
     let updated: Contest | undefined;
     if (contest.participants.length === 0) {
-      updated = repository.update(contest.id, (prev) =>
+      updated = storage.update(contest.id, (prev) =>
         withAuditEntry(
           { ...prev, status: "completed" },
           {
@@ -900,7 +900,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       );
     } else {
       const result = runDeterministicDraw(contest);
-      updated = repository.update(contest.id, (prev) =>
+      updated = storage.update(contest.id, (prev) =>
         withAuditEntry(
           {
             ...prev,
@@ -955,7 +955,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return ctx.reply("Укажите корректную будущую ISO-дату.");
     }
 
-    const contest = repository.get(contestId);
+    const contest = storage.get(contestId);
     if (!contest) {
       return ctx.reply("Конкурс не найден.");
     }
@@ -963,7 +963,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return ctx.reply("Переоткрыть можно только завершенный конкурс.");
     }
 
-    const updated = repository.update(contestId, (prev) => {
+    const updated = storage.update(contestId, (prev) => {
       const { drawSeed: _dropDrawSeed, ...withoutDrawSeed } = prev;
       return withAuditEntry(
         {
@@ -999,7 +999,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return ctx.reply("Формат: /myref contest_id");
     }
 
-    const contest = repository.get(contestId);
+    const contest = storage.get(contestId);
     if (!contest) {
       return ctx.reply("Конкурс не найден.");
     }
@@ -1039,7 +1039,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return ctx.reply("chat_id должен быть числом.");
     }
 
-    const contest = repository.get(contestId);
+    const contest = storage.get(contestId);
     if (!contest) {
       return ctx.reply("Конкурс не найден.");
     }
@@ -1062,7 +1062,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       ],
     });
 
-    repository.update(contest.id, (prev) => ({
+    storage.update(contest.id, (prev) => ({
       ...prev,
       publishChatId: chatId,
       publishMessageId: message.body?.mid ?? undefined,
@@ -1095,7 +1095,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return;
     }
 
-    const result = await tryJoinContest(bot, config, repository, contestId, user);
+    const result = await tryJoinContest(bot, config, storage, contestId, user);
     if (!result.ok) {
       await ctx.answerOnCallback({ notification: result.message });
       return;
@@ -1130,7 +1130,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return ctx.reply("Укажите ID конкурса: /draw contest_id");
     }
 
-    const contest = repository.get(contestId);
+    const contest = storage.get(contestId);
     if (!contest) {
       return ctx.reply("Конкурс не найден.");
     }
@@ -1147,7 +1147,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
     }
 
     const result = runDeterministicDraw(contest);
-    const updated = repository.update(contest.id, (prev) =>
+    const updated = storage.update(contest.id, (prev) =>
       withAuditEntry(
         {
           ...prev,
@@ -1199,7 +1199,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       return ctx.reply("Укажите ID конкурса: /reroll contest_id");
     }
 
-    const contest = repository.get(contestId);
+    const contest = storage.get(contestId);
     if (!contest) {
       return ctx.reply("Конкурс не найден.");
     }
@@ -1220,7 +1220,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
       endsAt: new Date().toISOString(),
     });
 
-    const updated = repository.update(contest.id, (prev) =>
+    const updated = storage.update(contest.id, (prev) =>
       withAuditEntry(
         {
           ...prev,
@@ -1254,7 +1254,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
   });
 
   setInterval(() => {
-    void autoFinishExpiredContests(bot, repository);
+    void autoFinishExpiredContests(bot, storage);
   }, 15000);
 
   return bot;
