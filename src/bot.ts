@@ -52,6 +52,29 @@ function isAdmin(config: AppConfig, userId: string): boolean {
   return config.adminUserIds.has(userId);
 }
 
+function getUserRole(config: AppConfig, userId: string): "owner" | "admin" | "moderator" | "user" {
+  if (config.ownerUserId && config.ownerUserId === userId) {
+    return "owner";
+  }
+  if (isAdmin(config, userId)) {
+    return "admin";
+  }
+  if (config.moderatorUserIds.has(userId)) {
+    return "moderator";
+  }
+  return "user";
+}
+
+function canManageContest(config: AppConfig, userId: string): boolean {
+  const role = getUserRole(config, userId);
+  return role === "owner" || role === "admin";
+}
+
+function canModerateContest(config: AppConfig, userId: string): boolean {
+  const role = getUserRole(config, userId);
+  return role === "owner" || role === "admin" || role === "moderator";
+}
+
 function parseRequiredChatIds(raw: string): number[] {
   return raw
     .split(/[,\s]+/)
@@ -446,6 +469,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
 
   bot.api.setMyCommands([
     { name: "start", description: "Помощь и команды" },
+    { name: "myrole", description: "Показать роль: /myrole" },
     { name: "whoami", description: "Показать ваш user ID" },
     {
       name: "newcontest",
@@ -509,6 +533,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
         "",
         "Команды:",
         "/whoami",
+        "/myrole",
         "/newcontest Название | ISO-дата-окончания | число_победителей",
         "/contests",
         "/setrequired contest_id chat_id[,chat_id2,...]",
@@ -534,12 +559,20 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
     return ctx.reply(`Ваш user ID: ${user.id}`);
   });
 
+  bot.command("myrole", (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      return ctx.reply("Не удалось определить пользователя.");
+    }
+    return ctx.reply(`Ваша роль: ${getUserRole(config, user.id)}`);
+  });
+
   bot.command("newcontest", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
       return ctx.reply("Не удалось определить пользователя.");
     }
-    if (!isAdmin(config, user.id)) {
+    if (!canManageContest(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
     const cooldown = hitCooldown(commandCooldowns, `newcontest:${user.id}`, COMMAND_COOLDOWN_MS);
@@ -606,7 +639,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
     if (!user) {
       return ctx.reply("Не удалось определить пользователя.");
     }
-    if (!isAdmin(config, user.id)) {
+    if (!canManageContest(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
     const cooldown = hitCooldown(commandCooldowns, `setrequired:${user.id}`, COMMAND_COOLDOWN_MS);
@@ -706,7 +739,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
     if (!user) {
       return ctx.reply("Не удалось определить пользователя.");
     }
-    if (!isAdmin(config, user.id)) {
+    if (!canManageContest(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
 
@@ -737,7 +770,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
     if (!user) {
       return ctx.reply("Не удалось определить пользователя.");
     }
-    if (!isAdmin(config, user.id)) {
+    if (!canManageContest(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
     const cooldown = hitCooldown(commandCooldowns, `editcontest:${user.id}`, COMMAND_COOLDOWN_MS);
@@ -797,7 +830,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
     if (!user) {
       return ctx.reply("Не удалось определить пользователя.");
     }
-    if (!isAdmin(config, user.id)) {
+    if (!canModerateContest(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
     const cooldown = hitCooldown(commandCooldowns, `closecontest:${user.id}`, COMMAND_COOLDOWN_MS);
@@ -868,7 +901,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
     if (!user) {
       return ctx.reply("Не удалось определить пользователя.");
     }
-    if (!isAdmin(config, user.id)) {
+    if (!canManageContest(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
     const cooldown = hitCooldown(commandCooldowns, `reopencontest:${user.id}`, COMMAND_COOLDOWN_MS);
@@ -954,7 +987,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
     if (!user) {
       return ctx.reply("Не удалось определить пользователя.");
     }
-    if (!isAdmin(config, user.id)) {
+    if (!canManageContest(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
     const cooldown = hitCooldown(commandCooldowns, `publish:${user.id}`, COMMAND_COOLDOWN_MS);
@@ -1050,7 +1083,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
     if (!user) {
       return ctx.reply("Не удалось определить пользователя.");
     }
-    if (!isAdmin(config, user.id)) {
+    if (!canModerateContest(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
     const userCooldown = hitCooldown(commandCooldowns, `draw:${user.id}`, COMMAND_COOLDOWN_MS);
@@ -1119,7 +1152,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
     if (!user) {
       return ctx.reply("Не удалось определить пользователя.");
     }
-    if (!isAdmin(config, user.id)) {
+    if (!canModerateContest(config, user.id)) {
       return ctx.reply("Эта команда доступна только администраторам.");
     }
     const userCooldown = hitCooldown(commandCooldowns, `reroll:${user.id}`, COMMAND_COOLDOWN_MS);
