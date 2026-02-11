@@ -156,6 +156,39 @@ function buildContestCsv(contests: Contest[]): string {
   return [header, ...rows].join("\n");
 }
 
+function buildAuditReport(contests: Contest[]): {
+  totals: { contests: number; participants: number; completed: number };
+  byAction: Record<string, number>;
+  recent: Array<{ contestId: string; at: string; action: string; actorId: string }>;
+} {
+  const byAction: Record<string, number> = {};
+  const recent = contests
+    .flatMap((contest) =>
+      (contest.auditLog ?? []).map((entry) => ({
+        contestId: contest.id,
+        at: entry.at,
+        action: entry.action,
+        actorId: entry.actorId,
+      })),
+    )
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 50);
+
+  for (const row of recent) {
+    byAction[row.action] = (byAction[row.action] ?? 0) + 1;
+  }
+
+  return {
+    totals: {
+      contests: contests.length,
+      participants: contests.reduce((acc, contest) => acc + contest.participants.length, 0),
+      completed: contests.filter((contest) => contest.status === "completed").length,
+    },
+    byAction,
+    recent,
+  };
+}
+
 function renderPage(
   contests: Contest[],
   basePath: string,
@@ -532,7 +565,12 @@ export function createAdminPanelServer(
       return;
     }
 
-    if (pathName !== basePath && pathName !== `${basePath}/action` && pathName !== `${basePath}/export`) {
+    if (
+      pathName !== basePath &&
+      pathName !== `${basePath}/action` &&
+      pathName !== `${basePath}/export` &&
+      pathName !== `${basePath}/audit`
+    ) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("Not found");
       return;
@@ -573,6 +611,26 @@ export function createAdminPanelServer(
         "content-disposition": `attachment; filename="contests-${Date.now()}.csv"`,
       });
       res.end(csv);
+      return;
+    }
+
+    if (method === "GET" && pathName === `${basePath}/audit`) {
+      const query = requestUrl.searchParams.get("q") ?? "";
+      const status = parseStatusFilter(requestUrl.searchParams.get("status"));
+      const filtered = applyContestFilters(repository.list(), query, status);
+      const report = buildAuditReport(filtered);
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify(
+          {
+            generatedAt: new Date().toISOString(),
+            filters: { query, status },
+            ...report,
+          },
+          null,
+          2,
+        ),
+      );
       return;
     }
 
@@ -621,6 +679,7 @@ export function createAdminPanelServer(
 
 export const __adminPanelTestables = {
   applyContestFilters,
+  buildAuditReport,
   buildAdminSignature,
   buildContestCsv,
   paginateContests,

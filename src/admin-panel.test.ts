@@ -148,4 +148,32 @@ describe("admin panel helpers", () => {
     assert.strictEqual(repo.get("a1")?.status, "completed");
     assert.strictEqual(repo.get("a2")?.status, "completed");
   });
+
+  it("builds audit report summary", () => {
+    const contests: Contest[] = [
+      mkContest({
+        id: "r1",
+        status: "completed",
+        participants: [{ userId: "u1", joinedAt: new Date().toISOString(), tickets: 1 }],
+        auditLog: [
+          { at: "2026-01-01T00:00:00.000Z", action: "created", actorId: "a1" },
+          { at: "2026-01-02T00:00:00.000Z", action: "draw", actorId: "a1" },
+        ],
+      }),
+      mkContest({
+        id: "r2",
+        status: "active",
+        participants: [],
+        auditLog: [{ at: "2026-01-03T00:00:00.000Z", action: "edited", actorId: "a2" }],
+      }),
+    ];
+    const report = __adminPanelTestables.buildAuditReport(contests);
+    assert.strictEqual(report.totals.contests, 2);
+    assert.strictEqual(report.totals.completed, 1);
+    assert.strictEqual(report.totals.participants, 1);
+    assert.strictEqual(report.byAction.created, 1);
+    assert.strictEqual(report.byAction.draw, 1);
+    assert.strictEqual(report.byAction.edited, 1);
+    assert.strictEqual(report.recent[0]?.contestId, "r2");
+  });
 });

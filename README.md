@@ -86,6 +86,9 @@ docker compose logs -f
 - В панели есть фильтры (поиск + статус), карточки метрик и формы `create/edit`.
 - Доступные действия в UI: `create`, `edit`, `draw`, `reroll`, `close`, `reopen` (с новой датой).
 - Добавлены `v2` инструменты: пагинация, массовые действия (`bulk close/draw/reroll`) и экспорт CSV по текущим фильтрам.
+- API-эндпоинты панели:
+  - `${ADMIN_PANEL_URL}/export` — CSV отчет по фильтрам (`q`, `status`).
+  - `${ADMIN_PANEL_URL}/audit` — JSON сводка аудита по фильтрам (`q`, `status`).
 
 ## Роли и доступы
 
