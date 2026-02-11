@@ -30,6 +30,18 @@ npm run dev
 npm run smoke
 ```
 
+Полный локальный demo-check:
+
+```bash
+npm run local:e2e
+```
+
+Сгенерировать подписанную ссылку админки вручную:
+
+```bash
+npm run admin:url
+```
+
 ## Как посмотреть готовый результат
 
 1. Запустите бота: `npm run dev`.
@@ -122,6 +134,14 @@ docker compose logs -f
 4. Проверьте список: кнопка `Конкурсы` или `/contests`
 5. Опубликуйте: `/publish contest_id chat_id [текст]`
 6. Проведите розыгрыш: `/draw contest_id`
+
+### Что уже готово (на сейчас)
+
+- Конкурсы: создание, участие, публикация, draw, reroll, proof, аудит.
+- Роли: owner/admin/moderator/user.
+- Админка: web mini-app с фильтрами, bulk-действиями, отчетами и метриками.
+- Мониторинг: `/health`, alerts, alert-digest, structured logs.
+- UX-онбординг: `/start`, `/help`, `/status` + интерактивные кнопки.
 
 ### Web mini-app админка (встроенная)
 

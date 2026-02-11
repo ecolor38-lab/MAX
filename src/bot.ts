@@ -313,6 +313,36 @@ function canUseLinkButtonUrl(rawUrl: string): boolean {
   }
 }
 
+function describeAdminPanelMode(adminPanelUrl?: string): "disabled" | "local" | "public" {
+  if (!adminPanelUrl) {
+    return "disabled";
+  }
+  return canUseLinkButtonUrl(adminPanelUrl) ? "public" : "local";
+}
+
+function buildStatusMessage(input: {
+  role: "owner" | "admin" | "moderator" | "user";
+  contestsTotal: number;
+  activeCount: number;
+  completedCount: number;
+  draftCount: number;
+  adminPanelMode: "disabled" | "local" | "public";
+}): string {
+  const panelLine =
+    input.adminPanelMode === "public"
+      ? "Админка: настроена (public URL, кнопка должна открываться в MAX)"
+      : input.adminPanelMode === "local"
+        ? "Админка: локальная (для MAX нужен публичный HTTPS URL)"
+        : "Админка: выключена (не задан ADMIN_PANEL_URL)";
+  return [
+    "Статус бота:",
+    `Роль: ${input.role}`,
+    `Конкурсы: всего=${input.contestsTotal}, active=${input.activeCount}, completed=${input.completedCount}, draft=${input.draftCount}`,
+    panelLine,
+    "Следующий шаг: /help -> Что дальше",
+  ].join("\n");
+}
+
 function withAuditEntry(contest: Contest, entry: ContestAuditEntry): Contest {
   const current = contest.auditLog ?? [];
   return { ...contest, auditLog: [...current, entry] };
@@ -730,6 +760,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.api.setMyCommands([
     { name: "start", description: "Помощь и команды" },
     { name: "help", description: "Онбординг и полный список команд" },
+    { name: "status", description: "Текущий статус бота и админки" },
     { name: "myrole", description: "Показать роль: /myrole" },
     { name: "adminpanel", description: "Открыть админ-панель: /adminpanel" },
     { name: "whoami", description: "Показать ваш user ID" },
@@ -800,6 +831,28 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     return ctx.reply(buildHelpMessage(config.defaultLocale), {
       attachments: [buildHelpKeyboard(config.defaultLocale, canManage)],
     });
+  });
+
+  bot.command("status", (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      return ctx.reply(msg("userNotDetected"));
+    }
+    const role = getUserRole(config, user.id);
+    const contests = storage.list();
+    const activeCount = contests.filter((contest) => contest.status === "active").length;
+    const completedCount = contests.filter((contest) => contest.status === "completed").length;
+    const draftCount = contests.filter((contest) => contest.status === "draft").length;
+    return ctx.reply(
+      buildStatusMessage({
+        role,
+        contestsTotal: contests.length,
+        activeCount,
+        completedCount,
+        draftCount,
+        adminPanelMode: describeAdminPanelMode(config.adminPanelUrl),
+      }),
+    );
   });
 
   bot.command("whoami", (ctx: Ctx) => {
@@ -1562,6 +1615,8 @@ export const __testables = {
   buildCommandTemplates,
   buildNextStepsMessage,
   canUseLinkButtonUrl,
+  describeAdminPanelMode,
+  buildStatusMessage,
   buildAlertDigestSignature,
   formatAlertDigestMessage,
   buildAdminPanelUrl,

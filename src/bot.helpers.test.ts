@@ -186,5 +186,24 @@ describe("bot testable helpers", () => {
     assert.strictEqual(__testables.canUseLinkButtonUrl("http://localhost:8787/adminpanel"), false);
     assert.strictEqual(__testables.canUseLinkButtonUrl("https://example.com/adminpanel"), true);
   });
+
+  it("builds status summary and admin panel mode", () => {
+    assert.strictEqual(__testables.describeAdminPanelMode(undefined), "disabled");
+    assert.strictEqual(__testables.describeAdminPanelMode("http://localhost:8787/adminpanel"), "local");
+    assert.strictEqual(__testables.describeAdminPanelMode("https://example.com/adminpanel"), "public");
+
+    const text = __testables.buildStatusMessage({
+      role: "owner",
+      contestsTotal: 5,
+      activeCount: 2,
+      completedCount: 3,
+      draftCount: 0,
+      adminPanelMode: "local",
+    });
+    assert.match(text, /Статус бота/);
+    assert.match(text, /Роль: owner/);
+    assert.match(text, /Конкурсы: всего=5/);
+    assert.match(text, /локальная/);
+  });
 });
 
