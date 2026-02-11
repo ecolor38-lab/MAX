@@ -9,6 +9,21 @@ export interface Participant {
   referralsCount?: number;
 }
 
+export interface ContestAuditEntry {
+  at: string;
+  action:
+    | "created"
+    | "edited"
+    | "closed"
+    | "reopened"
+    | "draw"
+    | "reroll"
+    | "autofinish"
+    | "join";
+  actorId: string;
+  details?: string;
+}
+
 export interface Contest {
   id: string;
   title: string;
@@ -23,4 +38,5 @@ export interface Contest {
   drawSeed?: string;
   publishChatId?: number;
   publishMessageId?: string;
+  auditLog?: ContestAuditEntry[];
 }

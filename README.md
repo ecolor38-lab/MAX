@@ -47,11 +47,13 @@ npm run dev
 /editcontest contest_id | title|- | endsAt|- | winners|-
 /closecontest contest_id
 /reopencontest contest_id 2026-12-31T20:00:00Z
+/contestaudit contest_id
 ```
 
 - `editcontest` меняет параметры существующего конкурса.
 - `closecontest` принудительно завершает конкурс (с розыгрышем, если есть участники).
 - `reopencontest` открывает завершенный конкурс заново с новой датой окончания.
+- `contestaudit` показывает последние записи журнала действий по конкурсу.
 
 ## Настройка обязательных чатов
 

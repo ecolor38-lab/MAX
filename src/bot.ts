@@ -5,7 +5,7 @@ import { Bot, Keyboard } from "@maxhub/max-bot-api";
 import type { AppConfig } from "./config";
 import { runDeterministicDraw } from "./draw";
 import { ContestRepository } from "./repository";
-import type { Contest, Participant } from "./types";
+import type { Contest, ContestAuditEntry, Participant } from "./types";
 
 type Ctx = any;
 const COMMAND_COOLDOWN_MS = 1500;
@@ -123,6 +123,11 @@ function parseEditContestArgs(raw: string): {
 
 function toContestLine(contest: Contest): string {
   return `#${contest.id} | ${contest.title} | status=${contest.status} | participants=${contest.participants.length} | winners=${contest.maxWinners} | requiredChats=${contest.requiredChats.length}`;
+}
+
+function withAuditEntry(contest: Contest, entry: ContestAuditEntry): Contest {
+  const current = contest.auditLog ?? [];
+  return { ...contest, auditLog: [...current, entry] };
 }
 
 function hitCooldown(
@@ -284,17 +289,41 @@ async function tryJoinContest(
 
     const participants = [...currentContest.participants, participant];
     if (!referrerId || referrerId === user.id) {
-      return { ...currentContest, participants };
+      return withAuditEntry(
+        { ...currentContest, participants },
+        {
+          at: new Date().toISOString(),
+          action: "join",
+          actorId: user.id,
+          details: "join",
+        },
+      );
     }
 
     const referrerIndex = participants.findIndex((p) => p.userId === referrerId);
     if (referrerIndex < 0) {
-      return { ...currentContest, participants };
+      return withAuditEntry(
+        { ...currentContest, participants },
+        {
+          at: new Date().toISOString(),
+          action: "join",
+          actorId: user.id,
+          details: `join (referrer not found=${referrerId})`,
+        },
+      );
     }
 
     const referrer = participants[referrerIndex];
     if (!referrer) {
-      return { ...currentContest, participants };
+      return withAuditEntry(
+        { ...currentContest, participants },
+        {
+          at: new Date().toISOString(),
+          action: "join",
+          actorId: user.id,
+          details: `join (invalid referrer=${referrerId})`,
+        },
+      );
     }
 
     const currentBonus = Math.max(0, (referrer.tickets ?? 1) - 1);
@@ -305,7 +334,15 @@ async function tryJoinContest(
         ...participant,
         referredBy: referrerId,
       };
-      return { ...currentContest, participants };
+      return withAuditEntry(
+        { ...currentContest, participants },
+        {
+          at: new Date().toISOString(),
+          action: "join",
+          actorId: user.id,
+          details: `join с реферером=${referrerId} (лимит бонуса достигнут)`,
+        },
+      );
     }
 
     participants[referrerIndex] = {
@@ -318,7 +355,15 @@ async function tryJoinContest(
       referredBy: referrerId,
     };
 
-    return { ...currentContest, participants };
+    return withAuditEntry(
+      { ...currentContest, participants },
+      {
+        at: new Date().toISOString(),
+        action: "join",
+        actorId: user.id,
+        details: `join с реферером=${referrerId}, бонус=${addBonus}`,
+      },
+    );
   });
   if (!updated) {
     return { ok: false, message: "Не удалось зарегистрировать участие." };
@@ -335,17 +380,37 @@ async function autoFinishExpiredContests(bot: Bot, repository: ContestRepository
 
   for (const contest of expiredActive) {
     if (contest.participants.length === 0) {
-      repository.update(contest.id, (prev) => ({ ...prev, status: "completed" }));
+      repository.update(contest.id, (prev) =>
+        withAuditEntry(
+          { ...prev, status: "completed" },
+          {
+            at: new Date().toISOString(),
+            action: "autofinish",
+            actorId: "system",
+            details: "Автозавершение без участников",
+          },
+        ),
+      );
       continue;
     }
 
     const result = runDeterministicDraw(contest);
-    const updated = repository.update(contest.id, (prev) => ({
-      ...prev,
-      status: "completed",
-      winners: result.winners,
-      drawSeed: result.seed,
-    }));
+    const updated = repository.update(contest.id, (prev) =>
+      withAuditEntry(
+        {
+          ...prev,
+          status: "completed",
+          winners: result.winners,
+          drawSeed: result.seed,
+        },
+        {
+          at: new Date().toISOString(),
+          action: "autofinish",
+          actorId: "system",
+          details: `Автозавершение, winners=${result.winners.join(",") || "none"}`,
+        },
+      ),
+    );
     if (!updated) {
       continue;
     }
@@ -387,6 +452,7 @@ export function createContestBot(config: AppConfig): Bot {
     { name: "setrequired", description: "Обязательные чаты: /setrequired contest_id chat1,chat2" },
     { name: "myref", description: "Рефкод: /myref contest_id" },
     { name: "join", description: "Участвовать: /join contest_id" },
+    { name: "contestaudit", description: "Аудит конкурса: /contestaudit contest_id" },
     {
       name: "editcontest",
       description: "Изменить конкурс: /editcontest id | title|- | endsAt|- | winners|-",
@@ -444,6 +510,7 @@ export function createContestBot(config: AppConfig): Bot {
         "/setrequired contest_id chat_id[,chat_id2,...]",
         "/myref contest_id",
         "/join contest_id [referrer_user_id]",
+        "/contestaudit contest_id",
         "/editcontest contest_id | title|- | endsAt|- | winners|-",
         "/closecontest contest_id",
         "/reopencontest contest_id ISO-дата",
@@ -504,6 +571,14 @@ export function createContestBot(config: AppConfig): Bot {
       requiredChats: [],
       participants: [],
       winners: [],
+      auditLog: [
+        {
+          at: new Date().toISOString(),
+          action: "created",
+          actorId: user.id,
+          details: `Создан конкурс "${title}"`,
+        },
+      ],
     };
 
     repository.create(contest);
@@ -591,6 +666,37 @@ export function createContestBot(config: AppConfig): Bot {
     );
   });
 
+  bot.command("contestaudit", (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      return ctx.reply("Не удалось определить пользователя.");
+    }
+    if (!isAdmin(config, user.id)) {
+      return ctx.reply("Эта команда доступна только администраторам.");
+    }
+
+    const contestId = parseCommandArgs(extractText(ctx));
+    if (!contestId) {
+      return ctx.reply("Формат: /contestaudit contest_id");
+    }
+
+    const contest = repository.get(contestId);
+    if (!contest) {
+      return ctx.reply("Конкурс не найден.");
+    }
+    const entries = contest.auditLog ?? [];
+    if (entries.length === 0) {
+      return ctx.reply("Аудит пуст.");
+    }
+
+    const tail = entries.slice(-10);
+    const lines = tail.map(
+      (entry) =>
+        `${entry.at} | ${entry.action} | actor=${entry.actorId}${entry.details ? ` | ${entry.details}` : ""}`,
+    );
+    return ctx.reply([`Аудит конкурса ${contest.id} (последние ${tail.length}):`, ...lines].join("\n"));
+  });
+
   bot.command("editcontest", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
@@ -619,12 +725,20 @@ export function createContestBot(config: AppConfig): Bot {
         }
       }
 
-      return {
-        ...contest,
-        ...(parsed.title ? { title: parsed.title } : {}),
-        ...(parsed.maxWinners ? { maxWinners: parsed.maxWinners } : {}),
-        endsAt: nextEndsAt,
-      };
+      return withAuditEntry(
+        {
+          ...contest,
+          ...(parsed.title ? { title: parsed.title } : {}),
+          ...(parsed.maxWinners ? { maxWinners: parsed.maxWinners } : {}),
+          endsAt: nextEndsAt,
+        },
+        {
+          at: new Date().toISOString(),
+          action: "edited",
+          actorId: user.id,
+          details: `title=${parsed.title ?? "-"}, endsAt=${parsed.endsAt ?? "-"}, maxWinners=${parsed.maxWinners ?? "-"}`,
+        },
+      );
     });
     if (!updated) {
       return ctx.reply("Конкурс не найден.");
@@ -671,15 +785,35 @@ export function createContestBot(config: AppConfig): Bot {
 
     let updated: Contest | undefined;
     if (contest.participants.length === 0) {
-      updated = repository.update(contest.id, (prev) => ({ ...prev, status: "completed" }));
+      updated = repository.update(contest.id, (prev) =>
+        withAuditEntry(
+          { ...prev, status: "completed" },
+          {
+            at: new Date().toISOString(),
+            action: "closed",
+            actorId: user.id,
+            details: "Принудительное закрытие без участников",
+          },
+        ),
+      );
     } else {
       const result = runDeterministicDraw(contest);
-      updated = repository.update(contest.id, (prev) => ({
-        ...prev,
-        status: "completed",
-        winners: result.winners,
-        drawSeed: result.seed,
-      }));
+      updated = repository.update(contest.id, (prev) =>
+        withAuditEntry(
+          {
+            ...prev,
+            status: "completed",
+            winners: result.winners,
+            drawSeed: result.seed,
+          },
+          {
+            at: new Date().toISOString(),
+            action: "closed",
+            actorId: user.id,
+            details: `Принудительное закрытие, winners=${result.winners.join(",") || "none"}`,
+          },
+        ),
+      );
     }
 
     if (!updated) {
@@ -728,12 +862,20 @@ export function createContestBot(config: AppConfig): Bot {
 
     const updated = repository.update(contestId, (prev) => {
       const { drawSeed: _dropDrawSeed, ...withoutDrawSeed } = prev;
-      return {
-        ...withoutDrawSeed,
-        status: "active",
-        endsAt: parsedDate.toISOString(),
-        winners: [],
-      };
+      return withAuditEntry(
+        {
+          ...withoutDrawSeed,
+          status: "active",
+          endsAt: parsedDate.toISOString(),
+          winners: [],
+        },
+        {
+          at: new Date().toISOString(),
+          action: "reopened",
+          actorId: user.id,
+          details: `Новая дата окончания=${parsedDate.toISOString()}`,
+        },
+      );
     });
     if (!updated) {
       return ctx.reply("Не удалось переоткрыть конкурс.");
@@ -897,12 +1039,22 @@ export function createContestBot(config: AppConfig): Bot {
     }
 
     const result = runDeterministicDraw(contest);
-    const updated = repository.update(contest.id, (prev) => ({
-      ...prev,
-      status: "completed",
-      winners: result.winners,
-      drawSeed: result.seed,
-    }));
+    const updated = repository.update(contest.id, (prev) =>
+      withAuditEntry(
+        {
+          ...prev,
+          status: "completed",
+          winners: result.winners,
+          drawSeed: result.seed,
+        },
+        {
+          at: new Date().toISOString(),
+          action: "draw",
+          actorId: user.id,
+          details: `winners=${result.winners.join(",") || "none"}`,
+        },
+      ),
+    );
 
     if (!updated) {
       return ctx.reply("Не удалось завершить конкурс.");
@@ -959,12 +1111,22 @@ export function createContestBot(config: AppConfig): Bot {
       endsAt: new Date().toISOString(),
     });
 
-    const updated = repository.update(contest.id, (prev) => ({
-      ...prev,
-      status: "completed",
-      winners: result.winners,
-      drawSeed: result.seed,
-    }));
+    const updated = repository.update(contest.id, (prev) =>
+      withAuditEntry(
+        {
+          ...prev,
+          status: "completed",
+          winners: result.winners,
+          drawSeed: result.seed,
+        },
+        {
+          at: new Date().toISOString(),
+          action: "reroll",
+          actorId: user.id,
+          details: `winners=${result.winners.join(",") || "none"}`,
+        },
+      ),
+    );
 
     if (!updated) {
       return ctx.reply("Не удалось выполнить reroll.");
