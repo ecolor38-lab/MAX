@@ -452,6 +452,7 @@ export function createContestBot(config: AppConfig): Bot {
     { name: "setrequired", description: "Обязательные чаты: /setrequired contest_id chat1,chat2" },
     { name: "myref", description: "Рефкод: /myref contest_id" },
     { name: "join", description: "Участвовать: /join contest_id" },
+    { name: "proof", description: "Пруф жеребьевки: /proof contest_id" },
     { name: "contestaudit", description: "Аудит конкурса: /contestaudit contest_id" },
     {
       name: "editcontest",
@@ -510,6 +511,7 @@ export function createContestBot(config: AppConfig): Bot {
         "/setrequired contest_id chat_id[,chat_id2,...]",
         "/myref contest_id",
         "/join contest_id [referrer_user_id]",
+        "/proof contest_id",
         "/contestaudit contest_id",
         "/editcontest contest_id | title|- | endsAt|- | winners|-",
         "/closecontest contest_id",
@@ -663,6 +665,33 @@ export function createContestBot(config: AppConfig): Bot {
 
     return ctx.reply(
       `Вы участвуете в конкурсе "${result.contest.title}". Всего участников: ${result.contest.participants.length}`,
+    );
+  });
+
+  bot.command("proof", (ctx: Ctx) => {
+    const contestId = parseCommandArgs(extractText(ctx));
+    if (!contestId) {
+      return ctx.reply("Формат: /proof contest_id");
+    }
+
+    const contest = repository.get(contestId);
+    if (!contest) {
+      return ctx.reply("Конкурс не найден.");
+    }
+    if (!contest.drawSeed) {
+      return ctx.reply("Для этого конкурса пока нет proof seed (жеребьевка еще не выполнена).");
+    }
+
+    return ctx.reply(
+      [
+        `Proof конкурса #${contest.id}`,
+        `Название: ${contest.title}`,
+        `Статус: ${contest.status}`,
+        `Participants: ${contest.participants.length}`,
+        `Winners: ${contest.winners.join(", ") || "-"}`,
+        `Seed: ${contest.drawSeed}`,
+        `Формула seed: sha256(contest.id|endsAt|participants.length)`,
+      ].join("\n"),
     );
   });
 
