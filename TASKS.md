@@ -1,6 +1,6 @@
-# MAX Contest Bot - Task Board
+# MAX Contest Bot — Доска задач
 
-Last updated: 2026-02-11 (referral scope started)
+Последнее обновление: 2026-02-11 (реферальная часть запущена)
 
 ## Workflow (автоматический режим)
 
@@ -9,104 +9,104 @@ Last updated: 2026-02-11 (referral scope started)
 2. `npm run test` (type-check + build + tests)
 3. Если тесты проходят → коммит автоматически, без запроса
 
-## 0) Current Project State
+## 0) Текущее состояние проекта
 
-- [x] Project bootstrap in `MAX` repo
-- [x] Core contest flows: `/newcontest`, `/join`, `/publish`, `/contests`, `/draw`, `/reroll`
-- [x] Deterministic draw with proof seed
-- [x] Auto-finish expired contests
-- [x] Required chat membership checks before join
-- [x] Auto-publish results to contest chat (timer + manual draw/reroll)
-- [~] Referral and bonus tickets system (core implemented, hardening pending)
-- [ ] Anti-abuse layer and moderation controls
-- [ ] Admin mini-app / advanced management UX
+- [x] Инициализация проекта в репо `MAX`
+- [x] Основные сценарии конкурсов: `/newcontest`, `/join`, `/publish`, `/contests`, `/draw`, `/reroll`
+- [x] Детерминированная жеребьёвка с proof seed
+- [x] Автозавершение истёкших конкурсов
+- [x] Проверка подписки на обязательные чаты перед участием
+- [x] Автопубликация итогов в чат конкурса (таймер + ручные draw/reroll)
+- [~] Реферальная система и бонусные билеты (ядро готово, доработки в процессе)
+- [ ] Защита от злоупотреблений и модерация
+- [ ] Мини-апп админа / продвинутый UX управления
 
-## 1) Active Sprint (Now)
+## 1) Текущий спринт
 
-### In Progress
+### В работе
 
-- [~] Implement referral links and bonus tickets
-  - [x] Add referral fields in participant storage model
-  - [ ] Add `/start <payload>` referral entrypoint handling
-  - [x] Add ticket rules (base + referral bonus, max cap)
-  - [x] Update draw logic to support weighted tickets
-  - [x] Update docs for referral mechanics
+- [~] Реализация реферальных ссылок и бонусных билетов
+  - [x] Добавлены поля реферала в модель участника
+  - [ ] Обработка `/start <payload>` для реферального входа
+  - [x] Правила билетов (базовый + бонус за реферала, лимит)
+  - [x] Логика жеребьёвки с учётом веса билетов
+  - [x] Обновлена документация по реферальной механике
 
-### Next
+### Дальше
 
-- [ ] Add anti-abuse protections
-  - [ ] Idempotency and duplicate action protection
-  - [ ] Cooldowns/rate limits for heavy commands
-  - [ ] Basic suspicious activity signals for admins
+- [ ] Защита от злоупотреблений
+  - [ ] Идемпотентность и защита от дублирования действий
+  - [ ] Кулдауны/лимиты для тяжёлых команд
+  - [ ] Сигналы о подозрительной активности для админов
 
-- [ ] Improve admin operations
-  - [ ] Contest edit command (title/end date/winner count)
-  - [ ] Force close/reopen command
-  - [ ] Detailed audit trail for draw/reroll
+- [ ] Улучшение админ-операций
+  - [ ] Команда редактирования конкурса (название, дата окончания, число победителей)
+  - [ ] Принудительное закрытие/открытие конкурса
+  - [ ] Детальный аудит для draw/reroll
 
-## 2) Backlog (Planned)
+## 2) Бэклог (запланировано)
 
-- [ ] Unit tests for draw/repository/bot command handlers
-- [ ] Structured logging and error telemetry
-- [ ] Better persistence backend (SQLite/Postgres) instead of JSON file
-- [ ] Multi-admin role model (owner/admin/moderator)
-- [ ] Localization support
-- [ ] Public fairness verification command (`/proof contest_id`)
+- [ ] Юнит-тесты для draw/repository/обработчиков команд бота
+- [ ] Структурированное логирование и сбор ошибок
+- [ ] Переход с JSON на SQLite/Postgres
+- [ ] Модель ролей (владелец/админ/модератор)
+- [ ] Локализация
+- [ ] Публичная команда верификации честности (`/proof contest_id`)
 
-## 3) MAX Bot API Capabilities and Limits (Important)
+## 3) Возможности и ограничения MAX Bot API
 
-This section is based on the installed SDK `@maxhub/max-bot-api` in this repo.
+Раздел основан на установленном SDK `@maxhub/max-bot-api` в этом репо.
 
-### What we can do
+### Что можно делать
 
-- Commands and handlers:
+- Команды и обработчики:
   - `bot.command(...)`
-  - `bot.action(...)` for callback buttons
+  - `bot.action(...)` для callback-кнопок
   - `bot.api.setMyCommands(...)`
-- Messaging:
+- Сообщения:
   - `sendMessageToChat(chatId, text, extra?)`
   - `sendMessageToUser(userId, text, extra?)`
-  - edit/delete/pin/unpin messages
-- Chat management:
+  - редактирование/удаление/закрепление сообщений
+- Управление чатами:
   - `getChatMembers(chatId, { user_ids })`
   - `getChatAdmins(chatId)`
   - `addChatMembers`, `removeChatMember`, `leaveChat`
-- Keyboards/buttons:
-  - callback button
-  - link button
-  - request_contact button
-  - request_geo_location button
-  - chat button
+- Клавиатуры/кнопки:
+  - callback
+  - link
+  - request_contact
+  - request_geo_location
+  - chat
 
-### Important limits and caveats
+### Важные ограничения
 
-- Membership check requirement:
-  - To verify required chats, bot must be able to query chat members.
-  - If bot lacks rights or cannot access chat, membership check fails.
-- No explicit "channel subscriber" API concept in SDK:
-  - We validate participation through `getChatMembers(...)`.
-- IDs are numeric:
-  - `chat_id` and `user_id` are numbers in API contracts.
-  - Any non-numeric IDs should be rejected/normalized.
-- Callback payload is string-based:
-  - Keep callback payload compact and deterministic.
-- No built-in contest scheduler:
-  - Auto-finish is app-level logic (`setInterval`) and must run in a stable process.
-- Command scope granularity is limited in current SDK surface:
-  - We use global command registration.
+- Проверка членства:
+  - Для проверки обязательных чатов бот должен иметь доступ к списку участников.
+  - Если прав нет или чат недоступен — проверка не пройдёт.
+- Нет отдельного API «подписчик канала» в SDK:
+  - Проверка через `getChatMembers(...)`.
+- ID — числовые:
+  - `chat_id` и `user_id` в API — числа.
+  - Нечисловые ID нужно отклонять/нормализовать.
+- Payload callback — строка:
+  - Держать payload коротким и детерминированным.
+- Нет встроенного планировщика конкурсов:
+  - Автозавершение реализовано в приложении (`setInterval`) и требует стабильного процесса.
+- Гибкость области команд в SDK ограничена:
+  - Используется глобальная регистрация команд.
 
-## 4) Architecture Guardrails (Working Rules)
+## 4) Архитектурные правила
 
-- Keep deterministic draw reproducible and auditable.
-- Never register participant without passing required-chat checks.
-- Any admin-only action must check admin ID first.
-- Avoid silently swallowing API failures when they affect fairness.
-- Store all critical contest state transitions in repository writes.
+- Жеребьёвка остаётся воспроизводимой и проверяемой.
+- Не регистрировать участника без прохождения проверки обязательных чатов.
+- Любая админ-операция проверяет admin ID до выполнения.
+- Не игнорировать ошибки API, если они влияют на честность.
+- Сохранять все важные изменения состояния конкурса в репозитории.
 
-## 5) Definition of Done for Next Milestone
+## 5) Definition of Done для следующего этапа
 
-- [ ] Referral system is live and documented
-- [ ] Weighted draw works and is test-covered
-- [ ] Abuse protections exist for join/referral paths
-- [ ] README updated with new commands and examples
-- [ ] All checks pass (`type-check`, `build`)
+- [ ] Реферальная система работает и задокументирована
+- [ ] Взвешенная жеребьёвка работает и покрыта тестами
+- [ ] Защита от злоупотреблений на путях join/referral
+- [ ] README обновлён с новыми командами и примерами
+- [ ] Все проверки проходят (`type-check`, `build`)
