@@ -1226,3 +1226,16 @@ export function createContestBot(config: AppConfig, logger: AppLogger): Bot {
 
   return bot;
 }
+
+export const __testables = {
+  parseCommandArgs,
+  parseRequiredChatIds,
+  parseJoinArgs,
+  parseStartJoinPayload,
+  parseEditContestArgs,
+  getUserRole,
+  canManageContest,
+  canModerateContest,
+  hitCooldown,
+  hitSuspiciousCounter,
+};
