@@ -177,6 +177,10 @@ function buildHelpMessage(locale: SupportedLocale): string {
   return [
     msg("helpTitle"),
     "",
+    locale === "ru"
+      ? "Нажмите кнопки ниже: базовые команды выполняются сразу, сложные открывают шаблоны."
+      : "Use buttons below: basic commands run instantly, advanced ones open templates.",
+    "",
     msg("helpQuickStartLabel"),
     "1) /newcontest Название | 2026-12-31T20:00:00Z | 1",
     "2) /publish contest_id chat_id [текст]",
@@ -207,6 +211,55 @@ function buildHelpMessage(locale: SupportedLocale): string {
     "",
     msg("helpHint"),
   ].join("\n");
+}
+
+function buildCommandTemplates(locale: SupportedLocale): string {
+  if (locale === "en") {
+    return [
+      "Command templates:",
+      "/newcontest Giveaway name | 2026-12-31T20:00:00Z | 1",
+      "/setrequired contest_id chat_id[,chat_id2,...]",
+      "/publish contest_id chat_id [post text]",
+      "/join contest_id [referrer_user_id]",
+      "/draw contest_id",
+      "/reroll contest_id",
+    ].join("\n");
+  }
+  return [
+    "Шаблоны команд:",
+    "/newcontest Название конкурса | 2026-12-31T20:00:00Z | 1",
+    "/setrequired contest_id chat_id[,chat_id2,...]",
+    "/publish contest_id chat_id [текст поста]",
+    "/join contest_id [referrer_user_id]",
+    "/draw contest_id",
+    "/reroll contest_id",
+  ].join("\n");
+}
+
+function buildHelpKeyboard(locale: SupportedLocale, canManage: boolean): ReturnType<typeof Keyboard.inlineKeyboard> {
+  const L = locale === "en";
+  const rows = [
+    [
+      Keyboard.button.callback(L ? "Who am I" : "Кто я", "help:whoami"),
+      Keyboard.button.callback(L ? "My role" : "Моя роль", "help:myrole"),
+    ],
+    [
+      Keyboard.button.callback(L ? "Contests" : "Конкурсы", "help:contests"),
+      Keyboard.button.callback(L ? "Templates" : "Шаблоны", "help:templates"),
+    ],
+  ];
+  if (canManage) {
+    rows.push(
+      [
+        Keyboard.button.callback(L ? "Open admin panel" : "Открыть админку", "help:adminpanel"),
+      ],
+      [
+        Keyboard.button.callback(L ? "Draw hint" : "Подсказка draw", "help:draw_hint"),
+        Keyboard.button.callback(L ? "Reroll hint" : "Подсказка reroll", "help:reroll_hint"),
+      ],
+    );
+  }
+  return Keyboard.inlineKeyboard(rows);
 }
 
 function withAuditEntry(contest: Contest, entry: ContestAuditEntry): Contest {
@@ -644,11 +697,17 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
       }
     }
 
-    return ctx.reply([msg("startTitle"), "", buildHelpMessage(config.defaultLocale)].join("\n"));
+    return ctx.reply([msg("startTitle"), "", buildHelpMessage(config.defaultLocale)].join("\n"), {
+      attachments: [buildHelpKeyboard(config.defaultLocale, canManageContest(config, user.id))],
+    });
   });
 
   bot.command("help", (ctx: Ctx) => {
-    return ctx.reply(buildHelpMessage(config.defaultLocale));
+    const user = extractUser(ctx);
+    const canManage = user ? canManageContest(config, user.id) : false;
+    return ctx.reply(buildHelpMessage(config.defaultLocale), {
+      attachments: [buildHelpKeyboard(config.defaultLocale, canManage)],
+    });
   });
 
   bot.command("whoami", (ctx: Ctx) => {
@@ -1196,6 +1255,69 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     });
   });
 
+  bot.action(/^help:(.+)$/, async (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      await ctx.answerOnCallback({ notification: msg("userNotDetected") });
+      return;
+    }
+    const payload = String(ctx.callback?.payload ?? "");
+    const action = payload.replace(/^help:/, "");
+
+    if (action === "whoami") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(msg("whoami", { userId: user.id }));
+      return;
+    }
+    if (action === "myrole") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(msg("myRole", { role: getUserRole(config, user.id) }));
+      return;
+    }
+    if (action === "contests") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      const contests = storage.list();
+      await ctx.reply(
+        contests.length === 0 ? "Пока нет созданных конкурсов." : ["Текущие конкурсы:", ...contests.map(toContestLine)].join("\n"),
+      );
+      return;
+    }
+    if (action === "templates") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(buildCommandTemplates(config.defaultLocale));
+      return;
+    }
+    if (action === "adminpanel") {
+      if (!canManageContest(config, user.id)) {
+        await ctx.answerOnCallback({ notification: msg("adminOnly") });
+        return;
+      }
+      if (!config.adminPanelUrl) {
+        await ctx.answerOnCallback({ notification: "Админ-панель не настроена." });
+        return;
+      }
+      const secret = config.adminPanelSecret || config.botToken;
+      const url = buildAdminPanelUrl(config.adminPanelUrl, user.id, secret);
+      await ctx.answerOnCallback({ notification: "Открываю админку..." });
+      await ctx.reply("Открыть админ-панель:", {
+        attachments: [Keyboard.inlineKeyboard([[Keyboard.button.link("Открыть панель", url)]])],
+      });
+      return;
+    }
+    if (action === "draw_hint") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply("Подсказка: сначала /contests, затем /draw contest_id.");
+      return;
+    }
+    if (action === "reroll_hint") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply("Подсказка: reroll доступен после завершения конкурса: /reroll contest_id.");
+      return;
+    }
+
+    await ctx.answerOnCallback({ notification: "Неизвестное действие." });
+  });
+
   bot.command("draw", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
@@ -1354,6 +1476,8 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 export const __testables = {
   extractUser,
   buildHelpMessage,
+  buildHelpKeyboard,
+  buildCommandTemplates,
   buildAlertDigestSignature,
   formatAlertDigestMessage,
   buildAdminPanelUrl,

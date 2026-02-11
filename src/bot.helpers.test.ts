@@ -165,5 +165,16 @@ describe("bot testable helpers", () => {
     assert.match(text, /Быстрый старт/);
     assert.match(text, /\/newcontest/);
   });
+
+  it("builds interactive help keyboard and templates", () => {
+    const keyboard = __testables.buildHelpKeyboard("ru", true);
+    const buttons = keyboard.payload.buttons.flat();
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:whoami"));
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:adminpanel"));
+
+    const templates = __testables.buildCommandTemplates("ru");
+    assert.match(templates, /Шаблоны команд/);
+    assert.match(templates, /\/publish contest_id chat_id/);
+  });
 });
 
