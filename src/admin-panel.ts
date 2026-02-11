@@ -258,6 +258,100 @@ function buildAuditReport(contests: Contest[]): {
   };
 }
 
+function buildMetricsReport(contests: Contest[]): {
+  totals: {
+    contests: number;
+    active: number;
+    completed: number;
+    draft: number;
+    participants: number;
+  };
+  engagement: {
+    contestsWithParticipants: number;
+    participationRatePct: number;
+    avgParticipantsPerContest: number;
+    contestsWithRequiredChats: number;
+  };
+  draws: {
+    drawActions: number;
+    rerollActions: number;
+    totalWinners: number;
+  };
+  referrals: {
+    participantsWithReferrer: number;
+    sumReferralCounters: number;
+  };
+  topContestsByParticipants: Array<{
+    id: string;
+    title: string;
+    participants: number;
+    status: Contest["status"];
+  }>;
+} {
+  const participants = contests.reduce((acc, contest) => acc + contest.participants.length, 0);
+  const contestsWithParticipants = contests.filter((contest) => contest.participants.length > 0).length;
+  const active = contests.filter((contest) => contest.status === "active").length;
+  const completed = contests.filter((contest) => contest.status === "completed").length;
+  const draft = contests.filter((contest) => contest.status === "draft").length;
+  const contestsWithRequiredChats = contests.filter((contest) => contest.requiredChats.length > 0).length;
+
+  const drawActions = contests.reduce(
+    (acc, contest) => acc + (contest.auditLog?.filter((entry) => entry.action === "draw").length ?? 0),
+    0,
+  );
+  const rerollActions = contests.reduce(
+    (acc, contest) => acc + (contest.auditLog?.filter((entry) => entry.action === "reroll").length ?? 0),
+    0,
+  );
+  const totalWinners = contests.reduce((acc, contest) => acc + contest.winners.length, 0);
+
+  const participantsWithReferrer = contests.reduce(
+    (acc, contest) => acc + contest.participants.filter((participant) => Boolean(participant.referredBy)).length,
+    0,
+  );
+  const sumReferralCounters = contests.reduce(
+    (acc, contest) =>
+      acc + contest.participants.reduce((sum, participant) => sum + (participant.referralsCount ?? 0), 0),
+    0,
+  );
+
+  const topContestsByParticipants = [...contests]
+    .sort((a, b) => b.participants.length - a.participants.length)
+    .slice(0, 5)
+    .map((contest) => ({
+      id: contest.id,
+      title: contest.title,
+      participants: contest.participants.length,
+      status: contest.status,
+    }));
+
+  return {
+    totals: {
+      contests: contests.length,
+      active,
+      completed,
+      draft,
+      participants,
+    },
+    engagement: {
+      contestsWithParticipants,
+      participationRatePct: contests.length > 0 ? Math.round((contestsWithParticipants / contests.length) * 100) : 0,
+      avgParticipantsPerContest: contests.length > 0 ? Number((participants / contests.length).toFixed(2)) : 0,
+      contestsWithRequiredChats,
+    },
+    draws: {
+      drawActions,
+      rerollActions,
+      totalWinners,
+    },
+    referrals: {
+      participantsWithReferrer,
+      sumReferralCounters,
+    },
+    topContestsByParticipants,
+  };
+}
+
 function renderPage(
   contests: Contest[],
   basePath: string,
@@ -640,7 +734,8 @@ export function createAdminPanelServer(
       pathName !== basePath &&
       pathName !== `${basePath}/action` &&
       pathName !== `${basePath}/export` &&
-      pathName !== `${basePath}/audit`
+      pathName !== `${basePath}/audit` &&
+      pathName !== `${basePath}/metrics`
     ) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("Not found");
@@ -734,6 +829,26 @@ export function createAdminPanelServer(
       return;
     }
 
+    if (method === "GET" && pathName === `${basePath}/metrics`) {
+      const query = requestUrl.searchParams.get("q") ?? "";
+      const status = parseStatusFilter(requestUrl.searchParams.get("status"));
+      const filtered = applyContestFilters(repository.list(), query, status);
+      const report = buildMetricsReport(filtered);
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify(
+          {
+            generatedAt: new Date().toISOString(),
+            filters: { query, status },
+            ...report,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+
     if (method === "POST" && pathName === `${basePath}/action`) {
       const body = await readPostBody(req);
       const action = body.get("action") ?? "";
@@ -780,6 +895,7 @@ export function createAdminPanelServer(
 export const __adminPanelTestables = {
   applyContestFilters,
   buildAuditReport,
+  buildMetricsReport,
   buildAdminSignature,
   buildContestCsv,
   hitRateLimit,

@@ -193,6 +193,42 @@ describe("admin panel helpers", () => {
     assert.strictEqual(report.recent[0]?.contestId, "r2");
   });
 
+  it("builds metrics report summary", () => {
+    const contests: Contest[] = [
+      mkContest({
+        id: "m1",
+        title: "Contest 1",
+        status: "active",
+        requiredChats: [1],
+        participants: [
+          { userId: "u1", joinedAt: new Date().toISOString(), tickets: 1, referredBy: "ref-1" },
+          { userId: "u2", joinedAt: new Date().toISOString(), tickets: 1, referralsCount: 2 },
+        ],
+        winners: [],
+        auditLog: [{ at: "2026-01-01T00:00:00.000Z", action: "draw", actorId: "a1" }],
+      }),
+      mkContest({
+        id: "m2",
+        title: "Contest 2",
+        status: "completed",
+        participants: [],
+        winners: ["u1"],
+        auditLog: [{ at: "2026-01-02T00:00:00.000Z", action: "reroll", actorId: "a2" }],
+      }),
+    ];
+    const report = __adminPanelTestables.buildMetricsReport(contests);
+    assert.strictEqual(report.totals.contests, 2);
+    assert.strictEqual(report.totals.active, 1);
+    assert.strictEqual(report.totals.completed, 1);
+    assert.strictEqual(report.totals.participants, 2);
+    assert.strictEqual(report.engagement.contestsWithRequiredChats, 1);
+    assert.strictEqual(report.draws.drawActions, 1);
+    assert.strictEqual(report.draws.rerollActions, 1);
+    assert.strictEqual(report.referrals.participantsWithReferrer, 1);
+    assert.strictEqual(report.referrals.sumReferralCounters, 2);
+    assert.strictEqual(report.topContestsByParticipants[0]?.id, "m1");
+  });
+
   it("normalizes ip and checks allowlist", () => {
     assert.strictEqual(__adminPanelTestables.normalizeIp("::ffff:127.0.0.1"), "127.0.0.1");
     assert.strictEqual(__adminPanelTestables.normalizeIp("127.0.0.1"), "127.0.0.1");

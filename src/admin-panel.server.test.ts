@@ -133,6 +133,20 @@ describe("admin panel server endpoints", () => {
     assert.match(text, /id,title,status/);
     assert.match(text, /"srv1","Server test contest","completed"/);
   });
+
+  it("returns metrics report for signed metrics request", async () => {
+    const query = buildSignedQuery("1", config.adminPanelSecret || config.botToken);
+    const url = await getServerBaseUrl(server);
+    const response = await fetch(`${url}/adminpanel/metrics?${query}`);
+    const payload = (await response.json()) as {
+      totals: { contests: number; participants: number };
+      draws: { drawActions: number };
+    };
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(payload.totals.contests, 1);
+    assert.strictEqual(payload.totals.participants, 1);
+    assert.strictEqual(payload.draws.drawActions, 1);
+  });
 });
 
 describe("admin panel server hardening", () => {

@@ -28,6 +28,7 @@
 - [x] Admin API отчеты (export CSV + audit JSON)
 - [x] Smoke/integration тесты mini-app endpoint’ов (`/health`, `/audit`, `/export`)
 - [x] Security hardening mini-app (TTL подписи, IP allowlist, rate-limit)
+- [x] Admin metrics endpoint (`/metrics`) для продуктовой/операционной аналитики
 
 ## 1) Текущий спринт
 
