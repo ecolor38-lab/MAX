@@ -11,6 +11,8 @@ import {
   buildHelpKeyboard,
   buildHelpMessage,
   buildNextStepsMessage,
+  buildOnboardingKeyboard,
+  buildOnboardingMessage,
   buildPostTemplateMessage,
   buildSchoolUserGuideMessage,
   buildStatusMessage,
@@ -704,8 +706,8 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
       }
     }
 
-    return ctx.reply([msg("startTitle"), "👉 Сначала открой: /guide", "", buildHelpMessage(config.defaultLocale)].join("\n"), {
-      attachments: [buildHelpKeyboard(config.defaultLocale, canManageContest(config, user.id))],
+    return ctx.reply(buildOnboardingMessage(config.defaultLocale), {
+      attachments: [buildOnboardingKeyboard(config.defaultLocale)],
     });
   });
 
@@ -718,6 +720,19 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   });
 
   bot.command("guide", (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    const canManage = user ? canManageContest(config, user.id) : false;
+    return ctx.reply(
+      [buildSchoolUserGuideMessage(config.defaultLocale), "", buildAdminIntegrationGuideMessage(config.defaultLocale)].join(
+        "\n",
+      ),
+      {
+        attachments: [buildHelpKeyboard(config.defaultLocale, canManage)],
+      },
+    );
+  });
+
+  bot.command("glad", (ctx: Ctx) => {
     const user = extractUser(ctx);
     const canManage = user ? canManageContest(config, user.id) : false;
     return ctx.reply(
@@ -1550,6 +1565,45 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     await ctx.answerOnCallback({ notification: "Неизвестное действие." });
   });
 
+  bot.action(/^onboarding:(.+)$/, async (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      await ctx.answerOnCallback({ notification: msg("userNotDetected") });
+      return;
+    }
+    const payload = String(ctx.callback?.payload ?? "");
+    const action = payload.replace(/^onboarding:/, "");
+    const canManage = canManageContest(config, user.id);
+
+    if (action === "help") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(buildHelpMessage(config.defaultLocale), {
+        attachments: [buildHelpKeyboard(config.defaultLocale, canManage)],
+      });
+      return;
+    }
+
+    if (action === "how") {
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(
+        [
+          "Как работает бот (коротко):",
+          "1) Администратор создает конкурс.",
+          "2) Публикует пост с кнопкой 'Участвовать'.",
+          "3) Пользователи входят в конкурс в один клик.",
+          "4) В конце админ нажимает draw.",
+          "5) Любой может проверить честность через /proof contest_id.",
+        ].join("\n"),
+        {
+          attachments: [buildOnboardingKeyboard(config.defaultLocale)],
+        },
+      );
+      return;
+    }
+
+    await ctx.answerOnCallback({ notification: "Неизвестное действие меню." });
+  });
+
   bot.command("draw", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
@@ -1728,6 +1782,8 @@ export const __testables = {
   extractUser,
   extractChatId,
   buildHelpMessage,
+  buildOnboardingMessage,
+  buildOnboardingKeyboard,
   buildHelpKeyboard,
   buildCommandTemplates,
   buildNextStepsMessage,

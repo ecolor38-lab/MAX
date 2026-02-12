@@ -66,6 +66,51 @@ export function buildCommandTemplates(locale: SupportedLocale): string {
   ].join("\n");
 }
 
+export function buildOnboardingMessage(locale: SupportedLocale): string {
+  if (locale === "en") {
+    return [
+      "Welcome to MAX Contest Bot!",
+      "",
+      "You don't need to type commands manually.",
+      "Press buttons below and follow steps.",
+      "",
+      "What this bot does:",
+      "- Creates and runs giveaway contests",
+      "- Lets users join in one tap",
+      "- Supports fair draw proof (/proof contest_id)",
+      "",
+      "Start with: User guide -> FAQ -> Master scenario",
+    ].join("\n");
+  }
+  return [
+    "Добро пожаловать в MAX Contest Bot!",
+    "",
+    "Команды руками вводить не нужно.",
+    "Просто нажимайте кнопки ниже и идите по шагам.",
+    "",
+    "Что умеет бот:",
+    "- Создает и проводит розыгрыши",
+    "- Дает участие в 1 клик",
+    "- Показывает proof честности (/proof contest_id)",
+    "",
+    "Старт: Инструкция для пользователя -> FAQ -> Мастер-сценарий",
+  ].join("\n");
+}
+
+export function buildOnboardingKeyboard(locale: SupportedLocale): ReturnType<typeof Keyboard.inlineKeyboard> {
+  const L = locale === "en";
+  return Keyboard.inlineKeyboard([
+    [Keyboard.button.callback(L ? "How bot works" : "Как работает бот", "onboarding:how")],
+    [Keyboard.button.callback(L ? "User guide" : "Инструкция для пользователя", "help:guide_user")],
+    [Keyboard.button.callback(L ? "Admin guide" : "Инструкция для администратора", "help:guide_admin")],
+    [
+      Keyboard.button.callback(L ? "FAQ" : "FAQ", "help:faq"),
+      Keyboard.button.callback(L ? "Master scenario" : "Мастер-сценарий", "wizard:start"),
+    ],
+    [Keyboard.button.callback(L ? "Open full help" : "Открыть полную справку", "onboarding:help")],
+  ]);
+}
+
 export function buildHelpKeyboard(locale: SupportedLocale, canManage: boolean): ReturnType<typeof Keyboard.inlineKeyboard> {
   const L = locale === "en";
   const rows = [

@@ -167,6 +167,20 @@ describe("bot testable helpers", () => {
     assert.match(text, /\/newcontest/);
   });
 
+  it("builds onboarding welcome message and keyboard", () => {
+    const message = __testables.buildOnboardingMessage("ru");
+    assert.match(message, /Добро пожаловать/);
+    assert.match(message, /Команды руками вводить не нужно/);
+
+    const keyboard = __testables.buildOnboardingKeyboard("ru");
+    const buttons = keyboard.payload.buttons.flat();
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "onboarding:how"));
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:guide_user"));
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:guide_admin"));
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "wizard:start"));
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "onboarding:help"));
+  });
+
   it("builds interactive help keyboard and templates", () => {
     const keyboard = __testables.buildHelpKeyboard("ru", true);
     const buttons = keyboard.payload.buttons.flat();
