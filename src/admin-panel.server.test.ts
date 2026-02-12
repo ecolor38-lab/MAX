@@ -125,6 +125,13 @@ describe("admin panel server endpoints", () => {
     assert.strictEqual(response.status, 401);
   });
 
+  it("rejects signed request for non-admin user id", async () => {
+    const query = buildSignedQuery("999", config.adminPanelSecret || config.botToken);
+    const url = await getServerBaseUrl(server);
+    const response = await fetch(`${url}/adminpanel/audit?${query}`);
+    assert.strictEqual(response.status, 403);
+  });
+
   it("returns json report for signed audit request", async () => {
     const query = buildSignedQuery("1", config.adminPanelSecret || config.botToken);
     const url = await getServerBaseUrl(server);

@@ -157,7 +157,7 @@ export function describeAdminPanelMode(adminPanelUrl?: string): "disabled" | "lo
   return canUseLinkButtonUrl(adminPanelUrl) ? "public" : "local";
 }
 
-export function buildStatusMessage(input: {
+export function buildStatusMessage(locale: SupportedLocale, input: {
   role: "owner" | "admin" | "moderator" | "user";
   contestsTotal: number;
   activeCount: number;
@@ -165,6 +165,21 @@ export function buildStatusMessage(input: {
   draftCount: number;
   adminPanelMode: "disabled" | "local" | "public";
 }): string {
+  if (locale === "en") {
+    const panelLine =
+      input.adminPanelMode === "public"
+        ? "Admin panel: configured (public URL should open in MAX)"
+        : input.adminPanelMode === "local"
+          ? "Admin panel: local only (MAX requires a public HTTPS URL)"
+          : "Admin panel: disabled (ADMIN_PANEL_URL is not set)";
+    return [
+      "Bot status:",
+      `Role: ${input.role}`,
+      `Contests: total=${input.contestsTotal}, active=${input.activeCount}, completed=${input.completedCount}, draft=${input.draftCount}`,
+      panelLine,
+      "Next step: /help -> What next",
+    ].join("\n");
+  }
   const panelLine =
     input.adminPanelMode === "public"
       ? "Админка: настроена (public URL, кнопка должна открываться в MAX)"

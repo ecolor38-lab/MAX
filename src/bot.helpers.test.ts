@@ -219,7 +219,7 @@ describe("bot testable helpers", () => {
     assert.strictEqual(__testables.describeAdminPanelMode("http://localhost:8787/adminpanel"), "local");
     assert.strictEqual(__testables.describeAdminPanelMode("https://example.com/adminpanel"), "public");
 
-    const text = __testables.buildStatusMessage({
+    const text = __testables.buildStatusMessage("ru", {
       role: "owner",
       contestsTotal: 5,
       activeCount: 2,
@@ -231,6 +231,18 @@ describe("bot testable helpers", () => {
     assert.match(text, /Роль: owner/);
     assert.match(text, /Конкурсы: всего=5/);
     assert.match(text, /локальная/);
+
+    const textEn = __testables.buildStatusMessage("en", {
+      role: "admin",
+      contestsTotal: 2,
+      activeCount: 1,
+      completedCount: 1,
+      draftCount: 0,
+      adminPanelMode: "public",
+    });
+    assert.match(textEn, /Bot status/);
+    assert.match(textEn, /Role: admin/);
+    assert.match(textEn, /Admin panel: configured/);
   });
 
   it("extracts chat id from context", () => {

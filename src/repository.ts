@@ -110,8 +110,16 @@ export class ContestRepository {
   }
 
   private readJson(): StorageShape {
-    const raw = fs.readFileSync(this.storagePath, "utf8");
-    return JSON.parse(raw) as StorageShape;
+    try {
+      const raw = fs.readFileSync(this.storagePath, "utf8");
+      const parsed = JSON.parse(raw) as Partial<StorageShape>;
+      if (!parsed || !Array.isArray(parsed.contests)) {
+        return { contests: [] };
+      }
+      return { contests: parsed.contests };
+    } catch {
+      return { contests: [] };
+    }
   }
 
   private writeJson(data: StorageShape): void {

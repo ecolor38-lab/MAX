@@ -634,7 +634,7 @@ function performAction(
     }
 
     const contest: Contest = {
-      id: crypto.randomBytes(4).toString("hex"),
+      id: crypto.randomBytes(8).toString("hex"),
       title,
       createdBy: input.actorId,
       createdAt: new Date().toISOString(),
@@ -826,7 +826,10 @@ export function createAdminPanelServer(
     const host = req.headers.host || "localhost";
     const requestUrl = new URL(req.url ?? "/", `http://${host}`);
     const pathName = requestUrl.pathname;
-    const clientIp = normalizeIp(req.socket.remoteAddress);
+    const forwardedFor = req.headers["x-forwarded-for"];
+    const firstForwardedIp =
+      typeof forwardedFor === "string" ? forwardedFor.split(",")[0]?.trim() : undefined;
+    const clientIp = normalizeIp(firstForwardedIp || req.socket.remoteAddress);
 
     if (pathName === "/health") {
       res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
@@ -913,6 +916,12 @@ export function createAdminPanelServer(
     if (!verification.ok) {
       res.writeHead(401, { "content-type": "text/plain; charset=utf-8" });
       res.end("Unauthorized");
+      return;
+    }
+    const isAuthorizedAdmin = verification.userId === config.ownerUserId || config.adminUserIds.has(verification.userId);
+    if (!isAuthorizedAdmin) {
+      res.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Forbidden");
       return;
     }
 

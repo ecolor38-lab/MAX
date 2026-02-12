@@ -762,7 +762,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     const completedCount = contests.filter((contest) => contest.status === "completed").length;
     const draftCount = contests.filter((contest) => contest.status === "draft").length;
     return ctx.reply(
-      buildStatusMessage({
+      buildStatusMessage(config.defaultLocale, {
         role,
         contestsTotal: contests.length,
         activeCount,
@@ -794,7 +794,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     if (!user) {
       return ctx.reply(msg("userNotDetected"));
     }
-    if (!canManageContest(config, user.id)) {
+    if (!canModerateContest(config, user.id)) {
       return ctx.reply(msg("adminOnly"));
     }
     await sendAdminPanelEntry(ctx, user.id);
@@ -832,7 +832,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     }
 
     const contest: Contest = {
-      id: crypto.randomBytes(4).toString("hex"),
+      id: crypto.randomBytes(8).toString("hex"),
       title,
       createdBy: user.id,
       createdAt: new Date().toISOString(),
@@ -1335,7 +1335,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     if (action === "create_demo") {
       const endsAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       const contest: Contest = {
-        id: crypto.randomBytes(4).toString("hex"),
+        id: crypto.randomBytes(8).toString("hex"),
         title: `DEMO Розыгрыш ${new Date().toLocaleDateString("ru-RU")}`,
         createdBy: user.id,
         createdAt: new Date().toISOString(),

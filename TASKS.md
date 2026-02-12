@@ -221,3 +221,24 @@
 - [x] Убрана кнопка `Юнит-экономика` из inline-help клавиатуры
 - [x] Убрана команда `/economics` из списка команд и command handlers
 - [x] Обновлены helper-тесты и `README.md` под новый UX без economics-команды
+
+## 17) Full autonomous audit + stack refresh
+
+- [x] Проведен full code review (security + logic + UX consistency)
+- [x] Закрыт critical security issue: admin-panel проверяет роль owner/admin после подписи URL
+- [x] Усилены тесты: запрет signed non-admin доступа к admin endpoints
+- [x] Обновлен стек до актуальных версий:
+  - [x] `@maxhub/max-bot-api` -> `0.2.2`
+  - [x] `dotenv` -> `17.2.4`
+  - [x] `@types/node` -> `25.2.3`
+- [x] Улучшена устойчивость хранилища:
+  - [x] корректная обработка битого JSON (fallback на пустое состояние)
+  - [x] добавлен тест malformed JSON
+  - [x] repository tests переведены на изолированные temp directories
+- [x] Улучшена международная консистентность:
+  - [x] `/status` локализован для `DEFAULT_LOCALE=en`
+- [x] Приведены права модератора к документации:
+  - [x] `contestaudit` доступен moderator (через `canModerateContest`)
+- [x] Повышена уникальность contest ID (8 байт случайности вместо 4)
+- [x] Добавлена простая пошаговая инструкция:
+  - [x] `HOW_TO_USE_BOT_STEP_BY_STEP.md`

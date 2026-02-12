@@ -82,6 +82,7 @@ NGROK_AUTHTOKEN=your_token
 Pre-release security-check: `SECURITY_CHECKLIST.md`.
 История изменений релиза: `CHANGELOG.md`.
 Шаблоны анонсов релиза: `RELEASE_ANNOUNCEMENT.md`.
+Пошаговая инструкция “с нуля”: `HOW_TO_USE_BOT_STEP_BY_STEP.md`.
 
 ## Запуск в Docker
 
