@@ -127,6 +127,7 @@ docker compose logs -f
 /guide
 /faq
 /posttemplate
+/economics
 /status
 /wizard
 ```
@@ -140,6 +141,7 @@ docker compose logs -f
 - `guide` — ультра-простая инструкция для обычного пользователя + блок для администратора.
 - `faq` — частые вопросы/ответы пользователей.
 - `posttemplate` — готовый шаблон поста для розыгрыша.
+- `economics` — краткая юнит-экономика продукта (owner/admin).
 - `status` — текущий runtime-статус бота/админки.
 - `wizard` — мастер-сценарий one-tap: создать демо -> опубликовать -> статус -> draw/proof.
 - В `/start` и `/help` есть интерактивные inline-кнопки:
@@ -194,6 +196,7 @@ docker compose logs -f
   - `${ADMIN_PANEL_URL}/metrics.csv` — CSV с агрегированными KPI для BI/Sheets.
   - `${ADMIN_PANEL_URL}/alerts` — JSON алерты/аномалии (reroll, просроченные active, referral outliers).
 - Health endpoint доступен всегда: `GET /health` (`ok`) — удобно для uptime-monitoring и Docker healthcheck.
+- Readiness endpoint: `GET /health/ready` (JSON) — быстрый снимок готовности и состояния хранилища.
 - В проекте есть smoke/integration тесты для endpoint’ов панели (`/health`, `/audit`, `/export`).
 - Security hardening панели:
   - configurable TTL подписи (`ADMIN_PANEL_TOKEN_TTL_MS`);

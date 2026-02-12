@@ -1,13 +1,15 @@
 import crypto from "node:crypto";
 import http from "node:http";
 
+import { withAuditEntry } from "./audit";
 import type { AppConfig } from "./config";
 import { runDeterministicDraw } from "./draw";
 import type { AppLogger } from "./logger";
 import { ContestRepository } from "./repository";
-import type { Contest, ContestAuditEntry } from "./types";
+import type { Contest } from "./types";
 
 const TOKEN_TTL_MS = 10 * 60 * 1000;
+const MAX_POST_BODY_BYTES = 256 * 1024;
 const FILTER_ALL = "all";
 type StatusFilter = Contest["status"] | typeof FILTER_ALL;
 const DEFAULT_PAGE_SIZE = 10;
@@ -22,11 +24,6 @@ function escapeHtml(input: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
-}
-
-function withAuditEntry(contest: Contest, entry: ContestAuditEntry): Contest {
-  const current = contest.auditLog ?? [];
-  return { ...contest, auditLog: [...current, entry] };
 }
 
 function toDatetimeLocalValue(isoString: string): string {
@@ -47,30 +44,7 @@ function buildAdminSignature(userId: string, ts: string, secret: string): string
 }
 
 function verifyAdminSignature(params: URLSearchParams, secret: string): { ok: true; userId: string } | { ok: false } {
-  const userId = params.get("uid")?.trim() ?? "";
-  const ts = params.get("ts")?.trim() ?? "";
-  const sig = params.get("sig")?.trim() ?? "";
-  if (!userId || !ts || !sig) {
-    return { ok: false };
-  }
-
-  const tsNum = Number(ts);
-  if (!Number.isFinite(tsNum) || Math.abs(Date.now() - tsNum) > TOKEN_TTL_MS) {
-    return { ok: false };
-  }
-
-  const expected = buildAdminSignature(userId, ts, secret);
-  const left = Buffer.from(sig, "hex");
-  const right = Buffer.from(expected, "hex");
-  if (left.length === 0 || left.length !== right.length) {
-    return { ok: false };
-  }
-
-  if (!crypto.timingSafeEqual(left, right)) {
-    return { ok: false };
-  }
-
-  return { ok: true, userId };
+  return verifyAdminSignatureWithTtl(params, secret, TOKEN_TTL_MS);
 }
 
 function verifyAdminSignatureWithTtl(
@@ -143,8 +117,16 @@ function hitRateLimit(
 
 async function readPostBody(req: http.IncomingMessage): Promise<URLSearchParams> {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of req) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    const normalized = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    total += normalized.length;
+    if (total > MAX_POST_BODY_BYTES) {
+      const error = new Error("Request body too large");
+      (error as Error & { code?: string }).code = "BODY_TOO_LARGE";
+      throw error;
+    }
+    chunks.push(normalized);
   }
   return new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
 }
@@ -832,7 +814,7 @@ export function createAdminPanelServer(
   config: AppConfig,
   repository: ContestRepository,
   logger: AppLogger,
-): http.Server | null {
+): http.Server {
   const panelEnabled = Boolean(config.adminPanelUrl);
   const panelUrl = panelEnabled ? new URL(config.adminPanelUrl as string) : null;
   const basePath = panelUrl?.pathname || "/adminpanel";
@@ -849,6 +831,32 @@ export function createAdminPanelServer(
     if (pathName === "/health") {
       res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
       res.end("ok");
+      return;
+    }
+
+    if (pathName === "/health/ready") {
+      const contests = repository.list();
+      const active = contests.filter((contest) => contest.status === "active").length;
+      const completed = contests.filter((contest) => contest.status === "completed").length;
+      const draft = contests.filter((contest) => contest.status === "draft").length;
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify(
+          {
+            status: "ready",
+            panelEnabled,
+            uptimeSeconds: Math.floor(process.uptime()),
+            storage: {
+              contests: contests.length,
+              active,
+              completed,
+              draft,
+            },
+          },
+          null,
+          2,
+        ),
+      );
       return;
     }
 
@@ -1013,7 +1021,15 @@ export function createAdminPanelServer(
     }
 
     if (method === "POST" && pathName === `${basePath}/action`) {
-      const body = await readPostBody(req);
+      let body: URLSearchParams;
+      try {
+        body = await readPostBody(req);
+      } catch (error) {
+        const isTooLarge = (error as Error & { code?: string })?.code === "BODY_TOO_LARGE";
+        res.writeHead(isTooLarge ? 413 : 400, { "content-type": "text/plain; charset=utf-8" });
+        res.end(isTooLarge ? "Payload Too Large" : "Bad Request");
+        return;
+      }
       const action = body.get("action") ?? "";
       const contestId = body.get("contestId") ?? undefined;
       const endsAt = body.get("endsAt") ?? undefined;
@@ -1055,6 +1071,9 @@ export function createAdminPanelServer(
       bindPort: config.adminPanelPort,
       panelEnabled,
     });
+    if (error.code === "EADDRINUSE" || error.code === "EACCES") {
+      process.exitCode = 1;
+    }
   });
 
   server.listen(config.adminPanelPort, "0.0.0.0", () => {

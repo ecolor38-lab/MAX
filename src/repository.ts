@@ -63,6 +63,13 @@ export class ContestRepository {
     });
   }
 
+  close(): void {
+    if (!this.db) {
+      return;
+    }
+    this.db.close();
+  }
+
   private ensureStorage(): void {
     const dir = path.dirname(this.storagePath);
     fs.mkdirSync(dir, { recursive: true });

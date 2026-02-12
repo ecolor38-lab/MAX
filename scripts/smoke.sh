@@ -3,6 +3,7 @@ set -euo pipefail
 
 BASE_URL="${1:-http://127.0.0.1:${ADMIN_PANEL_PORT:-8787}}"
 HEALTH_URL="${BASE_URL%/}/health"
+READY_URL="${BASE_URL%/}/health/ready"
 
 echo "== MAX Contest Bot smoke check =="
 echo "Base URL: ${BASE_URL}"
@@ -15,6 +16,16 @@ if [[ "${health_code}" != "200" || "${health_body}" != "ok" ]]; then
   exit 1
 fi
 echo "[OK] /health"
+
+ready_code="$(curl -sS -o /tmp/max-bot-ready.txt -w "%{http_code}" "${READY_URL}" || true)"
+ready_body="$(cat /tmp/max-bot-ready.txt 2>/dev/null || true)"
+rm -f /tmp/max-bot-ready.txt
+if [[ "${ready_code}" != "200" || "${ready_body}" != *"\"status\": \"ready\""* ]]; then
+  echo "[FAIL] /health/ready expected 200 + status=ready, got code=${ready_code}"
+  echo "Body: ${ready_body}"
+  exit 1
+fi
+echo "[OK] /health/ready"
 
 if [[ -z "${ADMIN_PANEL_URL:-}" ]]; then
   echo "[SKIP] Signed admin endpoints: ADMIN_PANEL_URL is empty (panel disabled)"

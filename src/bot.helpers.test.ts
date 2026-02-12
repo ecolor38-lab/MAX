@@ -112,6 +112,10 @@ describe("bot testable helpers", () => {
     assert.strictEqual(__testables.canModerateContest(config, "2"), true);
     assert.strictEqual(__testables.canModerateContest(config, "3"), true);
     assert.strictEqual(__testables.canModerateContest(config, "4"), false);
+
+    assert.strictEqual(__testables.canAccessEconomics(config, "1"), true);
+    assert.strictEqual(__testables.canAccessEconomics(config, "2"), true);
+    assert.strictEqual(__testables.canAccessEconomics(config, "3"), false);
   });
 
   it("handles cooldown and suspicious counters", () => {
@@ -173,6 +177,7 @@ describe("bot testable helpers", () => {
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:guide_admin"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:faq"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:post_template"));
+    assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:economics"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "wizard:start"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:nextsteps"));
     assert.ok(buttons.some((button) => button.type === "callback" && button.payload === "help:whoami"));
@@ -199,6 +204,12 @@ describe("bot testable helpers", () => {
 
     const postTemplate = __testables.buildPostTemplateMessage("ru");
     assert.match(postTemplate, /Готовый шаблон поста/);
+
+    const economics = __testables.buildEconomicsSummary("ru");
+    assert.match(economics, /Юнит-экономика/);
+    assert.match(economics, /UNIT_ECONOMICS\.md/);
+    const economicsEn = __testables.buildEconomicsSummary("en");
+    assert.match(economicsEn, /Unit economics/);
 
     const wizardText = __testables.buildWizardIntroMessage("ru");
     assert.match(wizardText, /Мастер-сценарий/);

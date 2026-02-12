@@ -104,6 +104,21 @@ describe("admin panel server endpoints", () => {
     assert.strictEqual(text, "ok");
   });
 
+  it("responds to readiness endpoint with json", async () => {
+    const url = await getServerBaseUrl(server);
+    const response = await fetch(`${url}/health/ready`);
+    const payload = (await response.json()) as {
+      status: string;
+      panelEnabled: boolean;
+      storage: { contests: number; completed: number };
+    };
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(payload.status, "ready");
+    assert.strictEqual(payload.panelEnabled, true);
+    assert.strictEqual(payload.storage.contests, 1);
+    assert.strictEqual(payload.storage.completed, 1);
+  });
+
   it("rejects unsigned audit request", async () => {
     const url = await getServerBaseUrl(server);
     const response = await fetch(`${url}/adminpanel/audit`);
@@ -170,6 +185,19 @@ describe("admin panel server endpoints", () => {
     assert.strictEqual(response.status, 200);
     assert.strictEqual(payload.totals.contests, 1);
     assert.ok(Array.isArray(payload.alerts));
+  });
+
+  it("rejects oversized action body with 413", async () => {
+    const query = buildSignedQuery("1", config.adminPanelSecret || config.botToken);
+    const url = await getServerBaseUrl(server);
+    const body = `action=create&title=${"x".repeat(300_000)}&endsAt=2030-01-01T00:00&maxWinners=1`;
+    const response = await fetch(`${url}/adminpanel/action?${query}`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body,
+      redirect: "manual",
+    });
+    assert.strictEqual(response.status, 413);
   });
 });
 
@@ -288,10 +316,15 @@ describe("admin panel server when disabled", () => {
       const url = await getServerBaseUrl(server);
       const health = await fetch(`${url}/health`);
       const healthText = await health.text();
+      const ready = await fetch(`${url}/health/ready`);
+      const readyPayload = (await ready.json()) as { status: string; panelEnabled: boolean };
       const panel = await fetch(`${url}/adminpanel`);
       const panelText = await panel.text();
       assert.strictEqual(health.status, 200);
       assert.strictEqual(healthText, "ok");
+      assert.strictEqual(ready.status, 200);
+      assert.strictEqual(readyPayload.status, "ready");
+      assert.strictEqual(readyPayload.panelEnabled, false);
       assert.strictEqual(panel.status, 404);
       assert.match(panelText, /Admin panel is disabled/);
     } finally {

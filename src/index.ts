@@ -1,8 +1,8 @@
 import "dotenv/config";
 
 import { createAdminPanelServer } from "./admin-panel";
-import { createContestBot } from "./bot";
-import { loadConfig } from "./config";
+import { createContestBot, type ContestBot } from "./bot";
+import { loadConfig, type AppConfig } from "./config";
 import { AppLogger } from "./logger";
 import { ContestRepository } from "./repository";
 
@@ -13,11 +13,22 @@ function normalizeError(reason: unknown): { message: string; stack?: string } {
   return { message: String(reason) };
 }
 
+function loadConfigOrExit(): AppConfig {
+  try {
+    return loadConfig();
+  } catch (error) {
+    // Config errors should fail fast before runtime starts.
+    console.error("config_load_failed", normalizeError(error));
+    process.exit(1);
+    throw error;
+  }
+}
+
 function main(): void {
-  const config = loadConfig();
+  const config = loadConfigOrExit();
   const logger = new AppLogger({ logPath: config.logPath });
   const repository = new ContestRepository(config.storagePath);
-  const bot = createContestBot(config, logger, repository);
+  const bot: ContestBot = createContestBot(config, logger, repository);
   const adminServer = createAdminPanelServer(config, repository, logger);
   let shuttingDown = false;
 
@@ -29,9 +40,15 @@ function main(): void {
     logger.warn("shutdown_started", { reason, exitCode });
 
     try {
-      bot.stop();
+      bot.shutdown();
     } catch (error) {
       logger.error("bot_stop_failed", normalizeError(error));
+    }
+
+    try {
+      repository.close();
+    } catch (error) {
+      logger.error("repository_close_failed", normalizeError(error));
     }
 
     const forceExit = setTimeout(() => {
@@ -39,11 +56,6 @@ function main(): void {
       process.exit(exitCode);
     }, 5000);
     forceExit.unref();
-
-    if (!adminServer) {
-      process.exit(exitCode);
-      return;
-    }
 
     adminServer.close(() => {
       clearTimeout(forceExit);

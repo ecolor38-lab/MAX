@@ -3,20 +3,45 @@ import crypto from "node:crypto";
 import { Bot, Keyboard } from "@maxhub/max-bot-api";
 
 import { buildAlertsReport } from "./admin-panel";
+import { withAuditEntry } from "./audit";
+import {
+  buildAdminIntegrationGuideMessage,
+  buildCommandTemplates,
+  buildEconomicsSummary,
+  buildFaqMessage,
+  buildHelpKeyboard,
+  buildHelpMessage,
+  buildNextStepsMessage,
+  buildPostTemplateMessage,
+  buildSchoolUserGuideMessage,
+  buildStatusMessage,
+  buildWizardIntroMessage,
+  buildWizardKeyboard,
+  canUseLinkButtonUrl,
+  describeAdminPanelMode,
+} from "./bot-ui";
 import type { AppConfig } from "./config";
 import { runDeterministicDraw } from "./draw";
-import { t, type SupportedLocale } from "./i18n";
+import { t } from "./i18n";
 import type { AppLogger } from "./logger";
 import { ContestRepository } from "./repository";
-import type { Contest, ContestAuditEntry, Participant } from "./types";
+import type { Contest, Participant } from "./types";
 
 type Ctx = any;
+export type ContestBot = Bot & { shutdown: () => void };
 const COMMAND_COOLDOWN_MS = 1500;
 const DRAW_LOCK_TTL_MS = 10_000;
 const SUSPICIOUS_WINDOW_MS = 5 * 60 * 1000;
 const SUSPICIOUS_THRESHOLD = 3;
 const SUSPICIOUS_ALERT_COOLDOWN_MS = 5 * 60 * 1000;
 const MIN_ALERT_DIGEST_INTERVAL_MS = 60_000;
+
+function formatError(error: unknown): { message: string; stack?: string } {
+  if (error instanceof Error) {
+    return { message: error.message, ...(error.stack ? { stack: error.stack } : {}) };
+  }
+  return { message: String(error) };
+}
 
 function extractUser(ctx: Ctx): { id: string; username?: string } | null {
   const userSource =
@@ -102,6 +127,10 @@ function canModerateContest(config: AppConfig, userId: string): boolean {
   return role === "owner" || role === "admin" || role === "moderator";
 }
 
+function canAccessEconomics(config: AppConfig, userId: string): boolean {
+  return canManageContest(config, userId);
+}
+
 function buildAdminPanelUrl(baseUrl: string, userId: string, secret: string): string {
   const ts = Date.now().toString();
   const signature = crypto.createHmac("sha256", secret).update(`${userId}:${ts}`).digest("hex");
@@ -184,321 +213,6 @@ function parseEditContestArgs(raw: string): {
 
 function toContestLine(contest: Contest): string {
   return `#${contest.id} | ${contest.title} | status=${contest.status} | participants=${contest.participants.length} | winners=${contest.maxWinners} | requiredChats=${contest.requiredChats.length}`;
-}
-
-function buildHelpMessage(locale: SupportedLocale): string {
-  const msg = (key: Parameters<typeof t>[1], vars?: Record<string, string | number>) => t(locale, key, vars);
-  return [
-    msg("helpTitle"),
-    "",
-    locale === "ru"
-      ? "Нажмите кнопки ниже: базовые команды выполняются сразу, сложные открывают шаблоны."
-      : "Use buttons below: basic commands run instantly, advanced ones open templates.",
-    "",
-    msg("helpQuickStartLabel"),
-    "1) /newcontest Название | 2026-12-31T20:00:00Z | 1",
-    "2) /publish contest_id chat_id [текст]",
-    "3) /join contest_id",
-    "4) /draw contest_id",
-    "",
-    msg("helpPublicCommandsLabel"),
-    "/start",
-    "/help",
-    "/whoami",
-    "/myrole",
-    "/contests",
-    "/join contest_id [referrer_user_id]",
-    "/myref contest_id",
-    "/proof contest_id",
-    "",
-    msg("helpAdminCommandsLabel"),
-    "/adminpanel",
-    "/newcontest",
-    "/setrequired contest_id chat_id[,chat_id2,...]",
-    "/editcontest contest_id | title|- | endsAt|- | winners|-",
-    "/closecontest contest_id",
-    "/reopencontest contest_id ISO-дата",
-    "/publish contest_id chat_id [текст_поста]",
-    "/draw contest_id",
-    "/reroll contest_id",
-    "/contestaudit contest_id",
-    "",
-    msg("helpHint"),
-  ].join("\n");
-}
-
-function buildCommandTemplates(locale: SupportedLocale): string {
-  if (locale === "en") {
-    return [
-      "Command templates:",
-      "/newcontest Giveaway name | 2026-12-31T20:00:00Z | 1",
-      "/setrequired contest_id chat_id[,chat_id2,...]",
-      "/publish contest_id chat_id [post text]",
-      "/join contest_id [referrer_user_id]",
-      "/draw contest_id",
-      "/reroll contest_id",
-    ].join("\n");
-  }
-  return [
-    "Шаблоны команд:",
-    "/newcontest Название конкурса | 2026-12-31T20:00:00Z | 1",
-    "/setrequired contest_id chat_id[,chat_id2,...]",
-    "/publish contest_id chat_id [текст поста]",
-    "/join contest_id [referrer_user_id]",
-    "/draw contest_id",
-    "/reroll contest_id",
-  ].join("\n");
-}
-
-function buildHelpKeyboard(locale: SupportedLocale, canManage: boolean): ReturnType<typeof Keyboard.inlineKeyboard> {
-  const L = locale === "en";
-  const rows = [
-    [
-      Keyboard.button.callback(L ? "User guide" : "Инструкция для пользователя", "help:guide_user"),
-      Keyboard.button.callback(L ? "Admin guide" : "Инструкция для администратора", "help:guide_admin"),
-    ],
-    [Keyboard.button.callback(L ? "Master scenario" : "Мастер-сценарий", "wizard:start")],
-    [
-      Keyboard.button.callback(L ? "What next" : "Что дальше", "help:nextsteps"),
-      Keyboard.button.callback(L ? "Templates" : "Шаблоны", "help:templates"),
-    ],
-    [
-      Keyboard.button.callback(L ? "FAQ" : "FAQ", "help:faq"),
-      Keyboard.button.callback(L ? "Post template" : "Шаблон поста", "help:post_template"),
-    ],
-    [
-      Keyboard.button.callback(L ? "Who am I" : "Кто я", "help:whoami"),
-      Keyboard.button.callback(L ? "My role" : "Моя роль", "help:myrole"),
-    ],
-    [Keyboard.button.callback(L ? "Contests" : "Конкурсы", "help:contests")],
-  ];
-  if (canManage) {
-    rows.push(
-      [
-        Keyboard.button.callback(L ? "Open admin panel" : "Открыть админку", "help:adminpanel"),
-      ],
-      [
-        Keyboard.button.callback(L ? "Draw hint" : "Подсказка draw", "help:draw_hint"),
-        Keyboard.button.callback(L ? "Reroll hint" : "Подсказка reroll", "help:reroll_hint"),
-      ],
-    );
-  }
-  return Keyboard.inlineKeyboard(rows);
-}
-
-function buildNextStepsMessage(locale: SupportedLocale): string {
-  if (locale === "en") {
-    return [
-      "Next steps:",
-      "1) Press Templates and copy /newcontest example.",
-      "2) Create contest via /newcontest ...",
-      "3) Check contest id in /contests.",
-      "4) Publish via /publish contest_id chat_id [text].",
-      "5) Run /draw contest_id when ready.",
-    ].join("\n");
-  }
-  return [
-    "Что делать дальше:",
-    "1) Нажмите 'Шаблоны' и скопируйте пример /newcontest.",
-    "2) Создайте конкурс: /newcontest ...",
-    "3) Посмотрите contest_id через /contests.",
-    "4) Опубликуйте: /publish contest_id chat_id [текст].",
-    "5) Проведите розыгрыш: /draw contest_id.",
-  ].join("\n");
-}
-
-function isPrivateOrLocalHost(hostname: string): boolean {
-  const host = hostname.trim().toLowerCase();
-  if (!host || host === "localhost" || host === "127.0.0.1" || host === "::1") {
-    return true;
-  }
-  if (host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("127.")) {
-    return true;
-  }
-  if (host.startsWith("172.")) {
-    const second = Number(host.split(".")[1] ?? "");
-    if (Number.isFinite(second) && second >= 16 && second <= 31) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function canUseLinkButtonUrl(rawUrl: string): boolean {
-  try {
-    const parsed = new URL(rawUrl);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return false;
-    }
-    return !isPrivateOrLocalHost(parsed.hostname);
-  } catch {
-    return false;
-  }
-}
-
-function describeAdminPanelMode(adminPanelUrl?: string): "disabled" | "local" | "public" {
-  if (!adminPanelUrl) {
-    return "disabled";
-  }
-  return canUseLinkButtonUrl(adminPanelUrl) ? "public" : "local";
-}
-
-function buildStatusMessage(input: {
-  role: "owner" | "admin" | "moderator" | "user";
-  contestsTotal: number;
-  activeCount: number;
-  completedCount: number;
-  draftCount: number;
-  adminPanelMode: "disabled" | "local" | "public";
-}): string {
-  const panelLine =
-    input.adminPanelMode === "public"
-      ? "Админка: настроена (public URL, кнопка должна открываться в MAX)"
-      : input.adminPanelMode === "local"
-        ? "Админка: локальная (для MAX нужен публичный HTTPS URL)"
-        : "Админка: выключена (не задан ADMIN_PANEL_URL)";
-  return [
-    "Статус бота:",
-    `Роль: ${input.role}`,
-    `Конкурсы: всего=${input.contestsTotal}, active=${input.activeCount}, completed=${input.completedCount}, draft=${input.draftCount}`,
-    panelLine,
-    "Следующий шаг: /help -> Что дальше",
-  ].join("\n");
-}
-
-function buildSchoolUserGuideMessage(locale: SupportedLocale): string {
-  if (locale === "en") {
-    return [
-      "User guide (simple):",
-      "1) Press Join button under contest post OR send /join contest_id.",
-      "2) Wait for draw time.",
-      "3) Check winners in chat.",
-      "4) Verify fairness using /proof contest_id.",
-      "Rule: one real account per person.",
-    ].join("\n");
-  }
-  return [
-    "Инструкция для обычного пользователя (3 шага):",
-    "1) Нажми кнопку 'Участвовать'.",
-    "2) Жди время розыгрыша.",
-    "3) Проверь победителей в чате.",
-    "",
-    "Если ошибка: открой /faq.",
-    "Если хочешь проверить честность: /proof contest_id.",
-  ].join("\n");
-}
-
-function buildAdminIntegrationGuideMessage(locale: SupportedLocale): string {
-  if (locale === "en") {
-    return [
-      "Admin guide: how to integrate into groups/channels",
-      "1) Add bot to your group/channel and grant needed rights.",
-      "2) Create contest: /newcontest Name | 2026-12-31T20:00:00Z | 1",
-      "3) (Optional) Required chats: /setrequired contest_id chat1,chat2",
-      "4) Publish post: /publish contest_id chat_id [post text]",
-      "5) Run draw: /draw contest_id",
-      "6) Open web admin: /adminpanel",
-    ].join("\n");
-  }
-  return [
-    "Инструкция для администратора: кто и как использует бота",
-    "Кто делает розыгрыши: owner/admin/moderator.",
-    "Кто участвует: обычные пользователи (кнопка Join).",
-    "",
-    "Как подключить в группу/канал:",
-    "1) Добавь бота в группу/канал и выдай нужные права.",
-    "2) Создай конкурс: /newcontest Название | 2026-12-31T20:00:00Z | 1",
-    "3) (Опционально) обязательные чаты: /setrequired contest_id chat1,chat2",
-    "4) Опубликуй пост: /publish contest_id chat_id [текст]",
-    "5) Проведи розыгрыш: /draw contest_id",
-    "6) Открой web-админку: /adminpanel",
-  ].join("\n");
-}
-
-function buildFaqMessage(locale: SupportedLocale): string {
-  if (locale === "en") {
-    return [
-      "FAQ:",
-      "Q: How to join?",
-      "A: Press Join button or /join contest_id.",
-      "Q: Why join failed?",
-      "A: Usually missing required chats or contest already closed.",
-      "Q: How to check fairness?",
-      "A: Use /proof contest_id.",
-      "Q: Who can run draw?",
-      "A: owner/admin/moderator (by role config).",
-    ].join("\n");
-  }
-  return [
-    "FAQ (вопросы-ответы):",
-    "В: Как участвовать?",
-    "О: Нажми кнопку 'Участвовать' или /join contest_id.",
-    "В: Почему не пускает в конкурс?",
-    "О: Обычно не выполнены обязательные чаты или конкурс уже завершен.",
-    "В: Как проверить честность?",
-    "О: Используй /proof contest_id.",
-    "В: Кто может делать draw?",
-    "О: owner/admin/moderator (по ролям в конфиге).",
-  ].join("\n");
-}
-
-function buildPostTemplateMessage(locale: SupportedLocale): string {
-  if (locale === "en") {
-    return [
-      "Ready-to-use contest post template:",
-      "🎁 Giveaway: <Prize>",
-      "✅ How to participate: press Join button",
-      "🕒 Draw time: <Date/Time>",
-      "🔍 Fairness: /proof contest_id after draw",
-      "👥 One account per person",
-    ].join("\n");
-  }
-  return [
-    "Готовый шаблон поста для розыгрыша:",
-    "🎁 Разыгрываем: <Приз/сертификат>",
-    "✅ Условие: нажмите кнопку 'Участвовать' (это 1 клик)",
-    "🕒 Итоги: <Дата/время>",
-    "🔍 Проверка честности: /proof contest_id после draw",
-    "👥 Один аккаунт на человека",
-    "📩 Победителю напишем в личку/публично в чате",
-  ].join("\n");
-}
-
-function buildWizardIntroMessage(locale: SupportedLocale): string {
-  if (locale === "en") {
-    return [
-      "Master scenario (one-tap):",
-      "Step 1: create demo contest",
-      "Step 2: publish in current chat",
-      "Step 3: check status",
-      "Step 4: run draw and proof",
-    ].join("\n");
-  }
-  return [
-    "Мастер-сценарий (one-tap):",
-    "Шаг 1: создать демо-конкурс",
-    "Шаг 2: опубликовать в текущий чат",
-    "Шаг 3: проверить статус",
-    "Шаг 4: провести draw и посмотреть proof",
-  ].join("\n");
-}
-
-function buildWizardKeyboard(locale: SupportedLocale): ReturnType<typeof Keyboard.inlineKeyboard> {
-  const L = locale === "en";
-  return Keyboard.inlineKeyboard([
-    [Keyboard.button.callback(L ? "1) Create demo" : "1) Создать демо", "wizard:create_demo")],
-    [Keyboard.button.callback(L ? "2) Publish here" : "2) Опубликовать сюда", "wizard:publish_here")],
-    [
-      Keyboard.button.callback(L ? "3) Status" : "3) Статус", "wizard:status"),
-      Keyboard.button.callback(L ? "4) Draw" : "4) Draw", "wizard:draw"),
-    ],
-    [Keyboard.button.callback(L ? "5) Proof" : "5) Proof", "wizard:proof")],
-  ]);
-}
-
-function withAuditEntry(contest: Contest, entry: ContestAuditEntry): Contest {
-  const current = contest.auditLog ?? [];
-  return { ...contest, auditLog: [...current, entry] };
 }
 
 function hitCooldown(
@@ -667,7 +381,7 @@ async function tryJoinContest(
 ): Promise<{ ok: true; contest: Contest; already: boolean } | { ok: false; message: string }> {
   const contest = repository.get(contestId);
   if (!contest) {
-    return { ok: false, message: "Конкурс не найден." };
+    return { ok: false, message: t(config.defaultLocale, "contestNotFound") };
   }
   if (contest.status !== "active") {
     return { ok: false, message: "Этот конкурс уже завершен." };
@@ -859,7 +573,7 @@ async function publishContestResults(bot: Bot, contest: Contest): Promise<void> 
   );
 }
 
-export function createContestBot(config: AppConfig, logger: AppLogger, repository?: ContestRepository): Bot {
+export function createContestBot(config: AppConfig, logger: AppLogger, repository?: ContestRepository): ContestBot {
   const storage = repository ?? new ContestRepository(config.storagePath);
   const bot = new Bot(config.botToken);
   const commandCooldowns = new Map<string, number>();
@@ -869,6 +583,8 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   const wizardState = new Map<string, string>();
   const msg = (key: Parameters<typeof t>[1], vars?: Record<string, string | number>) =>
     t(config.defaultLocale, key, vars);
+  const tooFrequentText = (seconds: number) => msg("tooFrequent", { seconds });
+  const contestNotFoundText = () => msg("contestNotFound");
   const sendAdminPanelEntry = async (ctx: Ctx, userId: string): Promise<void> => {
     if (!config.adminPanelUrl) {
       await ctx.reply("Админ-панель не настроена: задайте ADMIN_PANEL_URL в .env.");
@@ -928,11 +644,12 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
   bot.api.setMyCommands([
     { name: "start", description: "Помощь и команды" },
-    { name: "guide", description: "Инструкция для новичков и админов" },
+    { name: "guide", description: "Инструкция для пользователей и администраторов" },
     { name: "wizard", description: "Мастер-сценарий one-tap (создать -> publish -> draw)" },
     { name: "help", description: "Онбординг и полный список команд" },
     { name: "faq", description: "Вопросы и ответы по боту" },
     { name: "posttemplate", description: "Готовый шаблон поста розыгрыша" },
+    { name: "economics", description: "Юнит-экономика продукта (кратко)" },
     { name: "status", description: "Текущий статус бота и админки" },
     { name: "myrole", description: "Показать роль: /myrole" },
     { name: "adminpanel", description: "Открыть админ-панель: /adminpanel" },
@@ -1040,6 +757,17 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     return ctx.reply(buildPostTemplateMessage(config.defaultLocale));
   });
 
+  bot.command("economics", (ctx: Ctx) => {
+    const user = extractUser(ctx);
+    if (!user) {
+      return ctx.reply(msg("userNotDetected"));
+    }
+    if (!canAccessEconomics(config, user.id)) {
+      return ctx.reply("Команда доступна owner/admin.");
+    }
+    return ctx.reply(buildEconomicsSummary(config.defaultLocale));
+  });
+
   bot.command("status", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
@@ -1092,15 +820,15 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.command("newcontest", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
     if (!canManageContest(config, user.id)) {
-      return ctx.reply("Эта команда доступна только администраторам.");
+      return ctx.reply(msg("adminOnly"));
     }
     const cooldown = hitCooldown(commandCooldowns, `newcontest:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
       notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "newcontest_cooldown", user.id);
-      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
+      return ctx.reply(tooFrequentText(cooldown.waitSeconds));
     }
 
     const payload = parseCommandArgs(extractText(ctx));
@@ -1159,15 +887,15 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.command("setrequired", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
     if (!canManageContest(config, user.id)) {
-      return ctx.reply("Эта команда доступна только администраторам.");
+      return ctx.reply(msg("adminOnly"));
     }
     const cooldown = hitCooldown(commandCooldowns, `setrequired:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
       notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "setrequired_cooldown", user.id);
-      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
+      return ctx.reply(tooFrequentText(cooldown.waitSeconds));
     }
 
     const argsRaw = parseCommandArgs(extractText(ctx));
@@ -1187,7 +915,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
       requiredChats: uniqueRequiredChats,
     }));
     if (!updated) {
-      return ctx.reply("Конкурс не найден.");
+      return ctx.reply(contestNotFoundText());
     }
 
     return ctx.reply(
@@ -1198,13 +926,13 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.command("join", async (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
 
     const cooldown = hitCooldown(commandCooldowns, `join:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
       notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "join_cooldown", user.id);
-      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
+      return ctx.reply(tooFrequentText(cooldown.waitSeconds));
     }
 
     const { contestId, referrerId } = parseJoinArgs(parseCommandArgs(extractText(ctx)));
@@ -1237,7 +965,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
     const contest = storage.get(contestId);
     if (!contest) {
-      return ctx.reply("Конкурс не найден.");
+      return ctx.reply(contestNotFoundText());
     }
     if (!contest.drawSeed) {
       return ctx.reply("Для этого конкурса пока нет proof seed (жеребьевка еще не выполнена).");
@@ -1259,10 +987,10 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.command("contestaudit", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
     if (!canManageContest(config, user.id)) {
-      return ctx.reply("Эта команда доступна только администраторам.");
+      return ctx.reply(msg("adminOnly"));
     }
 
     const contestId = parseCommandArgs(extractText(ctx));
@@ -1272,7 +1000,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
     const contest = storage.get(contestId);
     if (!contest) {
-      return ctx.reply("Конкурс не найден.");
+      return ctx.reply(contestNotFoundText());
     }
     const entries = contest.auditLog ?? [];
     if (entries.length === 0) {
@@ -1290,15 +1018,15 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.command("editcontest", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
     if (!canManageContest(config, user.id)) {
-      return ctx.reply("Эта команда доступна только администраторам.");
+      return ctx.reply(msg("adminOnly"));
     }
     const cooldown = hitCooldown(commandCooldowns, `editcontest:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
       notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "editcontest_cooldown", user.id);
-      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
+      return ctx.reply(tooFrequentText(cooldown.waitSeconds));
     }
 
     const parsed = parseEditContestArgs(parseCommandArgs(extractText(ctx)));
@@ -1331,7 +1059,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
       );
     });
     if (!updated) {
-      return ctx.reply("Конкурс не найден.");
+      return ctx.reply(contestNotFoundText());
     }
 
     if (parsed.endsAt) {
@@ -1350,15 +1078,15 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.command("closecontest", async (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
     if (!canModerateContest(config, user.id)) {
-      return ctx.reply("Эта команда доступна только администраторам.");
+      return ctx.reply(msg("adminOnly"));
     }
     const cooldown = hitCooldown(commandCooldowns, `closecontest:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
       notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "closecontest_cooldown", user.id);
-      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
+      return ctx.reply(tooFrequentText(cooldown.waitSeconds));
     }
 
     const contestId = parseCommandArgs(extractText(ctx));
@@ -1368,7 +1096,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
     const contest = storage.get(contestId);
     if (!contest) {
-      return ctx.reply("Конкурс не найден.");
+      return ctx.reply(contestNotFoundText());
     }
     if (contest.status === "completed") {
       return ctx.reply("Конкурс уже завершен.");
@@ -1421,15 +1149,15 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.command("reopencontest", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
     if (!canManageContest(config, user.id)) {
-      return ctx.reply("Эта команда доступна только администраторам.");
+      return ctx.reply(msg("adminOnly"));
     }
     const cooldown = hitCooldown(commandCooldowns, `reopencontest:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
       notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "reopencontest_cooldown", user.id);
-      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
+      return ctx.reply(tooFrequentText(cooldown.waitSeconds));
     }
 
     const args = parseCommandArgs(extractText(ctx)).split(" ").filter(Boolean);
@@ -1446,7 +1174,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
     const contest = storage.get(contestId);
     if (!contest) {
-      return ctx.reply("Конкурс не найден.");
+      return ctx.reply(contestNotFoundText());
     }
     if (contest.status !== "completed") {
       return ctx.reply("Переоткрыть можно только завершенный конкурс.");
@@ -1480,7 +1208,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.command("myref", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
 
     const contestId = parseCommandArgs(extractText(ctx));
@@ -1490,7 +1218,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
     const contest = storage.get(contestId);
     if (!contest) {
-      return ctx.reply("Конкурс не найден.");
+      return ctx.reply(contestNotFoundText());
     }
 
     return ctx.reply(
@@ -1507,15 +1235,15 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.command("publish", async (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
     if (!canManageContest(config, user.id)) {
-      return ctx.reply("Эта команда доступна только администраторам.");
+      return ctx.reply(msg("adminOnly"));
     }
     const cooldown = hitCooldown(commandCooldowns, `publish:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!cooldown.ok) {
       notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "publish_cooldown", user.id);
-      return ctx.reply(`Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`);
+      return ctx.reply(tooFrequentText(cooldown.waitSeconds));
     }
 
     const argsRaw = parseCommandArgs(extractText(ctx));
@@ -1530,7 +1258,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
     const contest = storage.get(contestId);
     if (!contest) {
-      return ctx.reply("Конкурс не найден.");
+      return ctx.reply(contestNotFoundText());
     }
 
     const postText =
@@ -1564,7 +1292,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.action(/^join:(.+)$/, async (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      await ctx.answerOnCallback({ notification: "Не удалось определить пользователя." });
+      await ctx.answerOnCallback({ notification: msg("userNotDetected") });
       return;
     }
 
@@ -1572,7 +1300,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     if (!cooldown.ok) {
       notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "join_callback_cooldown", user.id);
       await ctx.answerOnCallback({
-        notification: `Слишком часто. Повторите через ${cooldown.waitSeconds} сек.`,
+        notification: tooFrequentText(cooldown.waitSeconds),
       });
       return;
     }
@@ -1811,6 +1539,15 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
       await ctx.reply(buildPostTemplateMessage(config.defaultLocale));
       return;
     }
+    if (action === "economics") {
+      if (!canAccessEconomics(config, user.id)) {
+        await ctx.answerOnCallback({ notification: msg("adminOnly") });
+        return;
+      }
+      await ctx.answerOnCallback({ notification: "OK" });
+      await ctx.reply(buildEconomicsSummary(config.defaultLocale));
+      return;
+    }
     if (action === "nextsteps") {
       await ctx.answerOnCallback({ notification: "OK" });
       await ctx.reply(buildNextStepsMessage(config.defaultLocale));
@@ -1842,15 +1579,15 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.command("draw", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
     if (!canModerateContest(config, user.id)) {
-      return ctx.reply("Эта команда доступна только администраторам.");
+      return ctx.reply(msg("adminOnly"));
     }
     const userCooldown = hitCooldown(commandCooldowns, `draw:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!userCooldown.ok) {
       notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "draw_cooldown", user.id);
-      return ctx.reply(`Слишком часто. Повторите через ${userCooldown.waitSeconds} сек.`);
+      return ctx.reply(tooFrequentText(userCooldown.waitSeconds));
     }
 
     const contestId = parseCommandArgs(extractText(ctx));
@@ -1860,7 +1597,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
     const contest = storage.get(contestId);
     if (!contest) {
-      return ctx.reply("Конкурс не найден.");
+      return ctx.reply(contestNotFoundText());
     }
     if (contest.status !== "active") {
       return ctx.reply("Конкурс уже завершен. Используйте /reroll для перевыбора.");
@@ -1897,7 +1634,9 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     }
 
     logger.info("contest_draw", { contestId: updated.id, actorId: user.id, winners: updated.winners });
-    void publishContestResults(bot, updated);
+    publishContestResults(bot, updated).catch((error: unknown) => {
+      logger.error("publish_results_failed", { contestId: updated.id, ...formatError(error) });
+    });
 
     return ctx.reply(
       [
@@ -1911,15 +1650,15 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
   bot.command("reroll", (ctx: Ctx) => {
     const user = extractUser(ctx);
     if (!user) {
-      return ctx.reply("Не удалось определить пользователя.");
+      return ctx.reply(msg("userNotDetected"));
     }
     if (!canModerateContest(config, user.id)) {
-      return ctx.reply("Эта команда доступна только администраторам.");
+      return ctx.reply(msg("adminOnly"));
     }
     const userCooldown = hitCooldown(commandCooldowns, `reroll:${user.id}`, COMMAND_COOLDOWN_MS);
     if (!userCooldown.ok) {
       notifySuspiciousIfNeeded(bot, config, logger, suspiciousActivity, "reroll_cooldown", user.id);
-      return ctx.reply(`Слишком часто. Повторите через ${userCooldown.waitSeconds} сек.`);
+      return ctx.reply(tooFrequentText(userCooldown.waitSeconds));
     }
 
     const contestId = parseCommandArgs(extractText(ctx));
@@ -1929,7 +1668,7 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
     const contest = storage.get(contestId);
     if (!contest) {
-      return ctx.reply("Конкурс не найден.");
+      return ctx.reply(contestNotFoundText());
     }
     if (contest.status !== "completed") {
       return ctx.reply("Reroll доступен только после завершения конкурса.");
@@ -1970,7 +1709,9 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     }
 
     logger.info("contest_reroll", { contestId: updated.id, actorId: user.id, winners: updated.winners });
-    void publishContestResults(bot, updated);
+    publishContestResults(bot, updated).catch((error: unknown) => {
+      logger.error("publish_results_failed", { contestId: updated.id, ...formatError(error) });
+    });
 
     return ctx.reply(
       [
@@ -1981,17 +1722,32 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     );
   });
 
-  setInterval(() => {
-    void autoFinishExpiredContests(bot, storage);
+  const autoFinishInterval = setInterval(() => {
+    autoFinishExpiredContests(bot, storage).catch((error: unknown) => {
+      logger.error("auto_finish_failed", formatError(error));
+    });
   }, 15000);
 
+  let alertDigestInterval: ReturnType<typeof setInterval> | null = null;
+
   if (config.adminAlertDigestIntervalMs > 0) {
-    setInterval(() => {
-      void notifyAlertDigestIfNeeded(bot, config, logger, storage, alertDigestState);
+    alertDigestInterval = setInterval(() => {
+      notifyAlertDigestIfNeeded(bot, config, logger, storage, alertDigestState).catch((error: unknown) => {
+        logger.error("alert_digest_failed", formatError(error));
+      });
     }, config.adminAlertDigestIntervalMs);
   }
 
-  return bot;
+  const contestBot = bot as ContestBot;
+  contestBot.shutdown = () => {
+    clearInterval(autoFinishInterval);
+    if (alertDigestInterval) {
+      clearInterval(alertDigestInterval);
+    }
+    bot.stop();
+  };
+
+  return contestBot;
 }
 
 export const __testables = {
@@ -2008,6 +1764,7 @@ export const __testables = {
   buildAdminIntegrationGuideMessage,
   buildFaqMessage,
   buildPostTemplateMessage,
+  buildEconomicsSummary,
   buildWizardIntroMessage,
   buildWizardKeyboard,
   buildAlertDigestSignature,
@@ -2021,6 +1778,7 @@ export const __testables = {
   getUserRole,
   canManageContest,
   canModerateContest,
+  canAccessEconomics,
   hitCooldown,
   hitSuspiciousCounter,
 };
