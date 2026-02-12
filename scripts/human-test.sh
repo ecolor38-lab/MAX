@@ -2,9 +2,19 @@
 set -euo pipefail
 
 BASE_URL="${1:-http://127.0.0.1:${ADMIN_PANEL_PORT:-8787}}"
+HEALTH_URL="${BASE_URL%/}/health"
 
 echo "== MAX Human Test Prep =="
 echo
+echo "0) Preflight"
+if ! curl -sS --connect-timeout 2 "${HEALTH_URL}" >/dev/null 2>&1; then
+  echo "[FAIL] Бот не отвечает на ${HEALTH_URL}"
+  echo "Запусти сначала: npm run dev"
+  exit 1
+fi
+echo "[OK] Бот доступен: ${HEALTH_URL}"
+echo
+
 echo "1) Быстрые автопроверки"
 npm run smoke
 echo
