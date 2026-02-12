@@ -10,6 +10,7 @@
     "type-check": "tsc --noEmit",
     "test": "npm run build && node --test dist/*.test.js",
     "smoke": "bash scripts/smoke.sh",
+    "preprod:gate": "bash scripts/preprod-gate.sh",
     "human:test": "bash scripts/human-test.sh",
     "admin:url": "bash scripts/admin-url.sh",
     "local:e2e": "bash scripts/local-e2e.sh",

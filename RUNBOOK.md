@@ -57,6 +57,7 @@
 ## 6) Мини smoke-checklist
 
 - [ ] `npm run test` проходит
+- [ ] `npm run preprod:gate` возвращает `GO`
 - [ ] `/health` возвращает `ok`
 - [ ] `/health/ready` возвращает `status=ready`
 - [ ] `/start` отвечает

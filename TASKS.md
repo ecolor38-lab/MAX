@@ -242,3 +242,16 @@
 - [x] Повышена уникальность contest ID (8 байт случайности вместо 4)
 - [x] Добавлена простая пошаговая инструкция:
   - [x] `HOW_TO_USE_BOT_STEP_BY_STEP.md`
+
+## 18) Pre-prod hard gate
+
+- [x] Добавлен скрипт `scripts/preprod-gate.sh` с жестким режимом `GO/NO-GO`
+- [x] Добавлены автоматические проверки:
+  - [x] security env policy (`ADMIN_PANEL_SECRET`, `ADMIN_PANEL_URL=https`, TTL, rate-limit)
+  - [x] `type-check` + полный `test`
+  - [x] runtime `/health` + `/health/ready`
+  - [x] signed smoke для admin endpoints
+  - [x] checks на устаревшие команды в активной документации
+  - [x] чистота git-дерева перед деплоем
+- [x] Добавлен npm script: `npm run preprod:gate`
+- [x] Обновлены `README.md`, `RUNBOOK.md`, `SECURITY_CHECKLIST.md`

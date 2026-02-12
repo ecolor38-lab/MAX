@@ -30,6 +30,12 @@ npm run dev
 npm run smoke
 ```
 
+Жесткий pre-prod gate (GO/NO-GO):
+
+```bash
+npm run preprod:gate
+```
+
 Полный локальный demo-check:
 
 ```bash
