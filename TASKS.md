@@ -203,3 +203,8 @@
 - [x] Добавлен `SECURITY_CHECKLIST.md` (pre-release и production security-check)
 - [x] Добавлен `CHANGELOG.md` (единая лента релизных изменений)
 - [x] Обновлены ссылки в `README.md` и проверки в `RUNBOOK.md`
+
+## 14) Release communication
+
+- [x] Добавлен `RELEASE_ANNOUNCEMENT.md` (готовые RU/EN шаблоны короткого и полного анонса)
+- [x] Добавлена ссылка на шаблоны анонса в `README.md`

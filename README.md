@@ -73,6 +73,7 @@ NGROK_AUTHTOKEN=your_token
 Операционная поддержка и troubleshooting: `RUNBOOK.md`.
 Pre-release security-check: `SECURITY_CHECKLIST.md`.
 История изменений релиза: `CHANGELOG.md`.
+Шаблоны анонсов релиза: `RELEASE_ANNOUNCEMENT.md`.
 
 ## Запуск в Docker
 
