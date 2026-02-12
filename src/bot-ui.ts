@@ -82,7 +82,6 @@ export function buildHelpKeyboard(locale: SupportedLocale, canManage: boolean): 
       Keyboard.button.callback(L ? "FAQ" : "FAQ", "help:faq"),
       Keyboard.button.callback(L ? "Post template" : "Шаблон поста", "help:post_template"),
     ],
-    [Keyboard.button.callback(L ? "Unit economics" : "Юнит-экономика", "help:economics")],
     [
       Keyboard.button.callback(L ? "Who am I" : "Кто я", "help:whoami"),
       Keyboard.button.callback(L ? "My role" : "Моя роль", "help:myrole"),
@@ -311,33 +310,3 @@ export function buildWizardKeyboard(locale: SupportedLocale): ReturnType<typeof 
   ]);
 }
 
-export function buildEconomicsSummary(locale: SupportedLocale): string {
-  if (locale === "en") {
-    return [
-      "Unit economics (model):",
-      "ARPU: ~2,500 RUB/client/month",
-      "COGS: ~340 RUB/client/month",
-      "Gross profit: ~2,160 RUB/client/month (~86.4%)",
-      "",
-      "MRR scenarios:",
-      "- 20 clients: ~50,000 RUB/month",
-      "- 100 clients: ~250,000 RUB/month",
-      "- 300 clients: ~750,000 RUB/month",
-      "",
-      "Details: UNIT_ECONOMICS.md",
-    ].join("\n");
-  }
-  return [
-    "Юнит-экономика (модель):",
-    "ARPU: ~2 500 RUB/клиент/мес",
-    "COGS: ~340 RUB/клиент/мес",
-    "Валовая прибыль: ~2 160 RUB/клиент/мес (~86.4%)",
-    "",
-    "Сценарии MRR:",
-    "- 20 клиентов: ~50 000 RUB/мес",
-    "- 100 клиентов: ~250 000 RUB/мес",
-    "- 300 клиентов: ~750 000 RUB/мес",
-    "",
-    "Подробно: UNIT_ECONOMICS.md",
-  ].join("\n");
-}

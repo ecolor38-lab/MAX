@@ -7,7 +7,6 @@ import { withAuditEntry } from "./audit";
 import {
   buildAdminIntegrationGuideMessage,
   buildCommandTemplates,
-  buildEconomicsSummary,
   buildFaqMessage,
   buildHelpKeyboard,
   buildHelpMessage,
@@ -125,10 +124,6 @@ function canManageContest(config: AppConfig, userId: string): boolean {
 function canModerateContest(config: AppConfig, userId: string): boolean {
   const role = getUserRole(config, userId);
   return role === "owner" || role === "admin" || role === "moderator";
-}
-
-function canAccessEconomics(config: AppConfig, userId: string): boolean {
-  return canManageContest(config, userId);
 }
 
 function buildAdminPanelUrl(baseUrl: string, userId: string, secret: string): string {
@@ -649,7 +644,6 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
     { name: "help", description: "Онбординг и полный список команд" },
     { name: "faq", description: "Вопросы и ответы по боту" },
     { name: "posttemplate", description: "Готовый шаблон поста розыгрыша" },
-    { name: "economics", description: "Юнит-экономика продукта (кратко)" },
     { name: "status", description: "Текущий статус бота и админки" },
     { name: "myrole", description: "Показать роль: /myrole" },
     { name: "adminpanel", description: "Открыть админ-панель: /adminpanel" },
@@ -755,17 +749,6 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
 
   bot.command("posttemplate", (ctx: Ctx) => {
     return ctx.reply(buildPostTemplateMessage(config.defaultLocale));
-  });
-
-  bot.command("economics", (ctx: Ctx) => {
-    const user = extractUser(ctx);
-    if (!user) {
-      return ctx.reply(msg("userNotDetected"));
-    }
-    if (!canAccessEconomics(config, user.id)) {
-      return ctx.reply("Команда доступна owner/admin.");
-    }
-    return ctx.reply(buildEconomicsSummary(config.defaultLocale));
   });
 
   bot.command("status", (ctx: Ctx) => {
@@ -1539,15 +1522,6 @@ export function createContestBot(config: AppConfig, logger: AppLogger, repositor
       await ctx.reply(buildPostTemplateMessage(config.defaultLocale));
       return;
     }
-    if (action === "economics") {
-      if (!canAccessEconomics(config, user.id)) {
-        await ctx.answerOnCallback({ notification: msg("adminOnly") });
-        return;
-      }
-      await ctx.answerOnCallback({ notification: "OK" });
-      await ctx.reply(buildEconomicsSummary(config.defaultLocale));
-      return;
-    }
     if (action === "nextsteps") {
       await ctx.answerOnCallback({ notification: "OK" });
       await ctx.reply(buildNextStepsMessage(config.defaultLocale));
@@ -1764,7 +1738,6 @@ export const __testables = {
   buildAdminIntegrationGuideMessage,
   buildFaqMessage,
   buildPostTemplateMessage,
-  buildEconomicsSummary,
   buildWizardIntroMessage,
   buildWizardKeyboard,
   buildAlertDigestSignature,
@@ -1778,7 +1751,6 @@ export const __testables = {
   getUserRole,
   canManageContest,
   canModerateContest,
-  canAccessEconomics,
   hitCooldown,
   hitSuspiciousCounter,
 };

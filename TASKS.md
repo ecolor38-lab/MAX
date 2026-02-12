@@ -208,3 +208,16 @@
 
 - [x] Добавлен `RELEASE_ANNOUNCEMENT.md` (готовые RU/EN шаблоны короткого и полного анонса)
 - [x] Добавлена ссылка на шаблоны анонса в `README.md`
+
+## 15) Human/visual testing kit
+
+- [x] Добавлен визуальный чеклист `scripts/MAX-VISUAL-TESTS.md` для ручного UX-прогона в MAX
+- [x] Добавлен подготовительный скрипт `scripts/human-test.sh`
+- [x] Добавлена npm-команда `npm run human:test`
+- [x] Обновлен `README.md` с инструкцией по визуальным тестам
+
+## 16) UX cleanup by live feedback
+
+- [x] Убрана кнопка `Юнит-экономика` из inline-help клавиатуры
+- [x] Убрана команда `/economics` из списка команд и command handlers
+- [x] Обновлены helper-тесты и `README.md` под новый UX без economics-команды

@@ -36,6 +36,14 @@ npm run smoke
 npm run local:e2e
 ```
 
+Визуальный (человеческий) тестовый прогон в MAX:
+
+```bash
+npm run human:test
+```
+
+Чеклист кликового прогона: `scripts/MAX-VISUAL-TESTS.md`.
+
 Сгенерировать подписанную ссылку админки вручную:
 
 ```bash
@@ -130,7 +138,6 @@ docker compose logs -f
 /guide
 /faq
 /posttemplate
-/economics
 /status
 /wizard
 ```
@@ -144,7 +151,6 @@ docker compose logs -f
 - `guide` — ультра-простая инструкция для обычного пользователя + блок для администратора.
 - `faq` — частые вопросы/ответы пользователей.
 - `posttemplate` — готовый шаблон поста для розыгрыша.
-- `economics` — краткая юнит-экономика продукта (owner/admin).
 - `status` — текущий runtime-статус бота/админки.
 - `wizard` — мастер-сценарий one-tap: создать демо -> опубликовать -> статус -> draw/proof.
 - В `/start` и `/help` есть интерактивные inline-кнопки:
