@@ -197,3 +197,9 @@
 - [x] Локализована сводка `/economics` (ru/en) через `buildEconomicsSummary(locale)`
 - [x] Обновлены helper-тесты под локализованную economics-сводку
 - [x] Полный регресс после i18n-полировки: `type-check` + `test` — green
+
+## 13) Release governance docs
+
+- [x] Добавлен `SECURITY_CHECKLIST.md` (pre-release и production security-check)
+- [x] Добавлен `CHANGELOG.md` (единая лента релизных изменений)
+- [x] Обновлены ссылки в `README.md` и проверки в `RUNBOOK.md`

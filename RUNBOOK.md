@@ -10,6 +10,7 @@
    - docker: `docker compose up -d --build`
 3. Проверьте живость:
    - `curl -sS http://127.0.0.1:8787/health`
+   - `curl -sS http://127.0.0.1:8787/health/ready`
    - ожидаемый ответ: `ok`
 4. Проверьте в MAX:
    - `/start`
@@ -57,6 +58,8 @@
 
 - [ ] `npm run test` проходит
 - [ ] `/health` возвращает `ok`
+- [ ] `/health/ready` возвращает `status=ready`
 - [ ] `/start` отвечает
 - [ ] `/myrole` корректен
 - [ ] `/adminpanel` открывается для owner/admin
+- [ ] `SECURITY_CHECKLIST.md` полностью пройден
